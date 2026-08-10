@@ -6,14 +6,36 @@ use crate::model::media::{AudioMetadata, MediaInfo};
 
 use super::error::ProbeError;
 
-/// Raw JSON output returned by `ffprobe`.
+/// Represents the top-level JSON document returned by `ffprobe`.
+///
+/// This wire-format type is internal to the probing module. It is converted
+/// into [`MediaInfo`] after deserialization so the rest of Demux does not
+/// depend on `ffprobe`'s JSON schema.
+///
+/// # Fields
+///
+/// - `streams`: Stream entries selected by the `ffprobe` command.
+/// - `format`: Container-level metadata for the input media.
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct ProbeOutput {
     pub streams: Vec<StreamInfo>,
     pub format: ProbeFormat,
 }
 
-/// Raw JSON details for a single media stream.
+/// Represents a single raw stream entry from `ffprobe` JSON.
+///
+/// String-valued numeric fields preserve the source representation and are
+/// parsed into numeric domain fields during conversion to [`MediaInfo`].
+///
+/// # Fields
+///
+/// - `index`: The stream index in the source media file.
+/// - `codec_name`: The codec identifier, when reported.
+/// - `sample_rate`: The sample rate as text, when reported.
+/// - `channels`: The number of audio channels, when reported.
+/// - `channel_layout`: The named channel arrangement, when reported.
+/// - `bit_rate`: The stream bitrate as text, when reported.
+/// - `tags`: Associated stream tags, defaulting to an empty set.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct StreamInfo {
     pub index: usize,
@@ -26,13 +48,24 @@ pub(super) struct StreamInfo {
     pub tags: StreamTags,
 }
 
-/// Raw JSON tags attached to a media stream.
+/// Represents raw tags attached to a media stream in `ffprobe` JSON.
+///
+/// # Fields
+///
+/// - `language`: The stream language tag, when present.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct StreamTags {
     pub language: Option<String>,
 }
 
-/// Raw JSON details for the media container.
+/// Represents raw container details from `ffprobe` JSON.
+///
+/// # Fields
+///
+/// - `format_name`: The comma-separated container format names.
+/// - `duration`: The total media duration as text.
+/// - `bit_rate`: The overall bitrate as text, when reported.
+/// - `tags`: Associated container tags, defaulting to an empty set.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct ProbeFormat {
     pub format_name: String,
@@ -42,7 +75,11 @@ pub(super) struct ProbeFormat {
     pub tags: FormatTags,
 }
 
-/// Raw JSON tags attached to the media container.
+/// Represents raw tags attached to the media container in `ffprobe` JSON.
+///
+/// # Fields
+///
+/// - `creation_time`: The container creation timestamp, when present.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct FormatTags {
     pub creation_time: Option<String>,

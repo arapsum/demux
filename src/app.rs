@@ -12,6 +12,16 @@ use tokio::task::JoinHandle;
 
 type ProbeTask = JoinHandle<ProbeResult<MediaInfo>>;
 
+/// Coordinates dependency checks and the interactive audio-ripping workflow.
+///
+/// An application instance owns the latest [`RipJob`] so callers can inspect
+/// its metadata, progress, and terminal status after a workflow completes.
+///
+/// # Fields
+///
+/// - `dependency_state`: The latest result of checking `ffmpeg` and `ffprobe`.
+/// - `current_job`: The most recently started ripping job, when one exists.
+/// - `next_job_id`: The identifier assigned to the next created job.
 #[derive(Debug)]
 pub struct App {
     dependency_state: DependencyState,

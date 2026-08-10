@@ -2,6 +2,14 @@ use super::media::MediaInfo;
 
 use std::time::Duration;
 
+/// Identifies a single audio-ripping job.
+///
+/// Job identifiers are assigned by [`App`](crate::App) in creation order and
+/// remain stable for the lifetime of a [`RipJob`].
+///
+/// # Fields
+///
+/// - `0`: The numeric job identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct JobId(pub u64);
 
@@ -12,6 +20,20 @@ impl JobId {
     }
 }
 
+/// Represents one requested audio extraction operation.
+///
+/// A job is created in the [`Pending`](JobStatus::Pending) state and advances
+/// through probing, readiness, ripping, and a terminal completed or failed
+/// state.
+///
+/// # Fields
+///
+/// - `id`: The stable identifier assigned to this job.
+/// - `input`: The source media file path.
+/// - `output`: The destination path for the extracted audio.
+/// - `status`: The current lifecycle state of the job.
+/// - `metadata`: Media metadata discovered during probing, when successful.
+/// - `progress`: The latest measured or estimated ripping progress.
 #[derive(Debug, Clone)]
 pub struct RipJob {
     pub id: JobId,
@@ -69,6 +91,17 @@ impl RipJob {
     }
 }
 
+/// Records the current progress of an audio-ripping job.
+///
+/// Values are initialized to zero and are updated as Demux learns the media
+/// duration and receives progress information from `FFmpeg`.
+///
+/// # Fields
+///
+/// - `elapsed`: Media time processed so far.
+/// - `duration`: Total media duration when it is known.
+/// - `percent`: Completion percentage in the inclusive range from 0 to 100.
+/// - `speed`: Processing speed relative to real time, when reported.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RipProgress {
     pub elapsed: Duration,
