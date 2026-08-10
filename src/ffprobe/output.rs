@@ -86,3 +86,104 @@ impl TryFrom<ProbeOutput> for MediaInfo {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_probe_json_into_media_info() {
+        let output: ProbeOutput = serde_json::from_str(
+            r#"
+            {
+                "streams": [{
+                    "index": 1,
+                    "codec_name": "aac",
+                    "sample_rate": "48000",
+                    "channels": 2,
+                    "channel_layout": "stereo",
+                    "bit_rate": "192000",
+                    "tags": {"language": "eng"}
+                }],
+                "format": {
+                    "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+                    "duration": "125.5",
+                    "bit_rate": "1000000",
+                    "tags": {"creation_time": "2026-08-10T12:00:00Z"}
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let metadata = MediaInfo::try_from(output).unwrap();
+
+        assert_eq!(metadata.duration, Duration::from_secs_f64(125.5));
+        assert_eq!(metadata.container, "mov,mp4,m4a,3gp,3g2,mj2");
+        assert_eq!(metadata.bitrate, Some(1_000_000));
+        assert_eq!(
+            metadata.creation_time.as_deref(),
+            Some("2026-08-10T12:00:00Z")
+        );
+        assert_eq!(metadata.audio.stream_index, 1);
+        assert_eq!(metadata.audio.codec, "aac");
+        assert_eq!(metadata.audio.sample_rate, Some(48_000));
+        assert_eq!(metadata.audio.channels, Some(2));
+        assert_eq!(metadata.audio.channel_layout.as_deref(), Some("stereo"));
+        assert_eq!(metadata.audio.bitrate, Some(192_000));
+        assert_eq!(metadata.audio.language.as_deref(), Some("eng"));
+    }
+
+    #[test]
+    fn missing_audio_stream_returns_no_audio_error() {
+        let output = ProbeOutput {
+            streams: Vec::new(),
+            format: ProbeFormat::default(),
+        };
+
+        assert!(matches!(
+            MediaInfo::try_from(output),
+            Err(ProbeError::NoAudio)
+        ));
+    }
+
+    #[test]
+    fn invalid_duration_returns_parse_error() {
+        let output = ProbeOutput {
+            streams: vec![StreamInfo::default()],
+            format: ProbeFormat {
+                duration: "not-a-duration".to_owned(),
+                ..ProbeFormat::default()
+            },
+        };
+
+        assert!(matches!(
+            MediaInfo::try_from(output),
+            Err(ProbeError::InvalidDuration(_))
+        ));
+    }
+
+    #[test]
+    fn invalid_optional_numeric_fields_are_ignored() {
+        let output = ProbeOutput {
+            streams: vec![StreamInfo {
+                codec_name: None,
+                sample_rate: Some("not-a-number".to_owned()),
+                bit_rate: Some("not-a-number".to_owned()),
+                ..StreamInfo::default()
+            }],
+            format: ProbeFormat {
+                duration: "1".to_owned(),
+                bit_rate: Some("not-a-number".to_owned()),
+                ..ProbeFormat::default()
+            },
+        };
+
+        let metadata = MediaInfo::try_from(output).unwrap();
+
+        assert_eq!(metadata.bitrate, None);
+        assert_eq!(metadata.audio.codec, "unknown");
+        assert_eq!(metadata.audio.sample_rate, None);
+        assert_eq!(metadata.audio.bitrate, None);
+    }
+}

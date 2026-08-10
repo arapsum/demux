@@ -98,3 +98,65 @@ pub enum JobStatus {
     Failed(String),
     Cancelled,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn media_info() -> MediaInfo {
+        MediaInfo {
+            duration: Duration::from_secs(90),
+            container: "mp4".to_owned(),
+            bitrate: Some(1_000_000),
+            creation_time: None,
+            audio: super::super::media::AudioMetadata {
+                stream_index: 0,
+                codec: "aac".to_owned(),
+                sample_rate: Some(48_000),
+                channels: Some(2),
+                channel_layout: Some("stereo".to_owned()),
+                bitrate: Some(192_000),
+                language: Some("eng".to_owned()),
+            },
+        }
+    }
+
+    #[test]
+    fn new_job_starts_pending_with_default_progress() {
+        let job = RipJob::new(JobId::new(7), "input.mp4".into(), "output.mp3".into());
+
+        assert_eq!(job.id, JobId::new(7));
+        assert_eq!(job.status, JobStatus::Pending);
+        assert!(job.metadata.is_none());
+        assert_eq!(job.progress, RipProgress::default());
+    }
+
+    #[test]
+    fn job_lifecycle_records_metadata_and_terminal_status() {
+        let mut job = RipJob::new(JobId::new(1), "input.mp4".into(), "output.mp3".into());
+        let metadata = media_info();
+
+        job.start_probing();
+        assert_eq!(job.status, JobStatus::Probing);
+
+        job.record_metadata(metadata);
+        assert_eq!(job.status, JobStatus::Ready);
+        assert_eq!(job.progress.duration, Duration::from_secs(90));
+        assert!(job.metadata.is_some());
+
+        job.start_ripping();
+        assert_eq!(job.status, JobStatus::Ripping);
+
+        job.complete();
+        assert_eq!(job.status, JobStatus::Completed);
+    }
+
+    #[test]
+    fn failed_job_keeps_the_failure_message() {
+        let mut job = RipJob::new(JobId::new(1), "input.mp4".into(), "output.mp3".into());
+
+        job.fail("ffprobe failed".to_owned());
+
+        assert_eq!(job.status, JobStatus::Failed("ffprobe failed".to_owned()));
+    }
+}

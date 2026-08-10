@@ -49,4 +49,18 @@ mod tests {
 
         assert_eq!(output, "/videos/favourite-track.mp3");
     }
+
+    #[test]
+    fn replaces_a_missing_input_extension() {
+        let output = output_path("/videos/reality", None, None);
+
+        assert_eq!(output, "/videos/reality.mp3");
+    }
+
+    #[test]
+    fn combines_a_selected_directory_and_filename() {
+        let output = output_path("/videos/reality.mp4", Some("/music"), Some("track.mp3"));
+
+        assert_eq!(output, "/music/track.mp3");
+    }
 }
