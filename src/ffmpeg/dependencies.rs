@@ -158,8 +158,7 @@ fn detect_program(program: &'static str) -> Result<String, DependencyError> {
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .next()
-        .map(str::to_owned)
-        .unwrap_or_else(|| program.to_owned()))
+        .map_or_else(|| program.to_owned(), str::to_owned))
 }
 
 #[cfg(test)]

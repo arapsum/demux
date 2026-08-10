@@ -4,6 +4,7 @@ use std::time::Duration;
 pub struct JobId(pub u64);
 
 impl JobId {
+    #[must_use]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
