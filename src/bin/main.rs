@@ -1,3 +1,6 @@
-fn main() {
-    println!("Hello World!");
+use demux::{App, Result};
+
+fn main() -> Result<()> {
+    let mut app = App::new();
+    app.run()
 }

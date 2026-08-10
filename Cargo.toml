@@ -13,3 +13,4 @@ name = "demux"
 path = "src/lib.rs"
 
 [dependencies]
+thiserror = "2.0.20"
