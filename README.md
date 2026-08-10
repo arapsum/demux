@@ -95,3 +95,7 @@ cargo clippy --all-targets --all-features
 - [ ] Implement extraction, cancellation, progress parsing, and log streaming.
 - [ ] Connect the drop zone, queue, output settings, progress panel, and controls.
 - [ ] Add packaging and platform-specific distribution guidance.
+
+## License
+
+Demux is licensed under the [GNU General Public License v3.0 only](LICENSE).
