@@ -1,4 +1,6 @@
-use std::process::{Command, Output};
+use std::process::Output;
+
+use tokio::process::Command;
 
 use crate::ffmpeg::FFmpegResult;
 
@@ -18,7 +20,8 @@ use crate::ffmpeg::FFmpegResult;
 ///
 /// # Returns
 ///
-/// The captured `FFmpeg` process output. Callers must check
+/// The captured `FFmpeg` process output after the asynchronous command
+/// completes. Callers must check
 /// [`Output::status`] because `FFmpeg` failures, such as an unreadable input or
 /// unwritable output, result in a non-success status rather than an
 /// [`Err`][Result::Err].
@@ -35,11 +38,13 @@ use crate::ffmpeg::FFmpegResult;
 /// ```no_run
 /// use demux::ffmpeg::rip;
 ///
-/// let result = rip("input.mp4", "output.mp3")?;
+/// # async fn example() -> demux::Result<()> {
+/// let result = rip("input.mp4", "output.mp3").await?;
 /// assert!(result.status.success());
-/// # Ok::<(), demux::Error>(())
+/// # Ok(())
+/// # }
 /// ```
-pub fn rip(input: &str, output: &str) -> FFmpegResult<Output> {
+pub async fn rip(input: &str, output: &str) -> FFmpegResult<Output> {
     Command::new("ffmpeg")
         .arg("-i")
         .arg(input)
@@ -50,5 +55,6 @@ pub fn rip(input: &str, output: &str) -> FFmpegResult<Output> {
         .arg("192k")
         .arg(output)
         .output()
+        .await
         .map_err(Into::into)
 }

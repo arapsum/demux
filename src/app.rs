@@ -165,7 +165,7 @@ impl App {
             return Ok(());
         }
 
-        Self::rip_job(&mut job);
+        Self::rip_job(&mut job).await;
         self.finish_job(job);
         Ok(())
     }
@@ -226,11 +226,11 @@ impl App {
         }
     }
 
-    fn rip_job(job: &mut RipJob) {
+    async fn rip_job(job: &mut RipJob) {
         println!("==== Ripping audio... ====");
         job.start_ripping();
 
-        match ffmpeg::rip(&job.input, &job.output) {
+        match ffmpeg::rip(&job.input, &job.output).await {
             Ok(output) if output.status.success() => {
                 job.complete();
                 println!("Audio ripped successfully: {}", job.output);
