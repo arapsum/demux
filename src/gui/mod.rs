@@ -50,17 +50,27 @@ pub fn run() -> iced::Result {
 
 fn subscription(_state: &Demux) -> Subscription<Message> {
     event::listen_with(|event, _, _| match event {
-        iced::Event::Window(window::Event::FileHovered(_)) => {
+        iced::Event::Window(event) => window_event(event),
+        _ => None,
+    })
+}
+
+fn window_event(event: window::Event) -> Option<Message> {
+    match event {
+        window::Event::FileHovered(path) => {
+            tracing::trace!(path = %path.display(), "media path hovered over window");
             Some(Message::Queue(queue::Message::DropHoverChanged(true)))
         }
-        iced::Event::Window(window::Event::FilesHoveredLeft) => {
+        window::Event::FilesHoveredLeft => {
+            tracing::trace!("media paths left window");
             Some(Message::Queue(queue::Message::DropHoverChanged(false)))
         }
-        iced::Event::Window(window::Event::FileDropped(path)) => {
+        window::Event::FileDropped(path) => {
+            tracing::info!(path = %path.display(), "media path dropped into queue");
             Some(Message::Queue(queue::Message::PathsDropped(vec![path])))
         }
         _ => None,
-    })
+    }
 }
 
 fn theme() -> Theme {
@@ -79,4 +89,37 @@ fn theme() -> Theme {
 
 fn app_theme(_state: &Demux) -> Theme {
     theme()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn dropped_file_window_event_enters_queue_intake() {
+        let path = PathBuf::from("concert.mkv");
+        let message = window_event(window::Event::FileDropped(path.clone()));
+
+        assert!(matches!(
+            message,
+            Some(Message::Queue(queue::Message::PathsDropped(paths))) if paths == vec![path]
+        ));
+    }
+
+    #[test]
+    fn file_hover_window_events_update_drop_feedback() {
+        let hovered = window_event(window::Event::FileHovered(PathBuf::from("concert.mkv")));
+        let left = window_event(window::Event::FilesHoveredLeft);
+
+        assert!(matches!(
+            hovered,
+            Some(Message::Queue(queue::Message::DropHoverChanged(true)))
+        ));
+        assert!(matches!(
+            left,
+            Some(Message::Queue(queue::Message::DropHoverChanged(false)))
+        ));
+    }
 }
