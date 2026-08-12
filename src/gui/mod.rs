@@ -18,6 +18,8 @@
 //! maps child tasks and translates child actions when a workflow crosses surface
 //! boundaries.
 
+mod drop_zone;
+mod icon;
 mod message;
 mod output_settings;
 mod presentation;
@@ -35,6 +37,7 @@ pub use self::{message::Message, state::Demux};
 pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)
         .title("Demux")
+        .font(lucide_icons::LUCIDE_FONT_BYTES)
         .theme(app_theme)
         .subscription(subscription)
         .window(window::Settings {
@@ -47,6 +50,12 @@ pub fn run() -> iced::Result {
 
 fn subscription(_state: &Demux) -> Subscription<Message> {
     event::listen_with(|event, _, _| match event {
+        iced::Event::Window(window::Event::FileHovered(_)) => {
+            Some(Message::Queue(queue::Message::DropHoverChanged(true)))
+        }
+        iced::Event::Window(window::Event::FilesHoveredLeft) => {
+            Some(Message::Queue(queue::Message::DropHoverChanged(false)))
+        }
         iced::Event::Window(window::Event::FileDropped(path)) => {
             Some(Message::Queue(queue::Message::PathsDropped(vec![path])))
         }

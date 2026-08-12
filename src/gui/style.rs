@@ -1,5 +1,5 @@
-use iced::widget::container;
-use iced::{Border, Color, Shadow, Theme};
+use iced::widget::{button, container};
+use iced::{Background, Border, Color, Shadow, Theme};
 
 pub(crate) const TEXT_MUTED: Color = Color::from_rgb(0.62, 0.64, 0.70);
 pub(crate) const ACCENT: Color = Color::from_rgb(0.43, 0.36, 0.96);
@@ -7,6 +7,10 @@ pub(crate) const SUCCESS: Color = Color::from_rgb(0.35, 0.78, 0.57);
 pub(crate) const WARNING: Color = Color::from_rgb(0.96, 0.68, 0.30);
 pub(crate) const DANGER: Color = Color::from_rgb(0.94, 0.39, 0.42);
 pub(crate) const DANGER_TEXT: Color = Color::from_rgb(0.95, 0.76, 0.77);
+pub(crate) const INSET_BACKGROUND: Color = Color::from_rgb(0.065, 0.07, 0.087);
+pub(crate) const DROP_BORDER: Color = Color::from_rgb(0.31, 0.32, 0.38);
+pub(crate) const ICON_MUTED: Color = Color::from_rgb(0.48, 0.50, 0.57);
+pub(crate) const BUTTON_TEXT: Color = Color::from_rgb(0.94, 0.95, 0.98);
 
 pub(crate) fn app_background(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.055, 0.06, 0.075))
@@ -29,7 +33,7 @@ pub(crate) fn panel(_theme: &Theme) -> container::Style {
 
 pub(crate) fn inset_panel(_theme: &Theme) -> container::Style {
     container::Style::default()
-        .background(Color::from_rgb(0.065, 0.07, 0.087))
+        .background(INSET_BACKGROUND)
         .border(Border {
             color: Color::from_rgb(0.19, 0.20, 0.24),
             width: 1.0,
@@ -65,4 +69,91 @@ pub(crate) fn error_panel(_theme: &Theme) -> container::Style {
             width: 1.0,
             radius: 12.0.into(),
         })
+}
+
+pub(crate) fn primary_action(_theme: &Theme, status: button::Status) -> button::Style {
+    let (background, text_color, border_color) = match status {
+        button::Status::Active => (ACCENT, Color::WHITE, ACCENT),
+        button::Status::Hovered => (
+            Color::from_rgb(0.50, 0.43, 1.0),
+            Color::WHITE,
+            Color::from_rgb(0.54, 0.47, 1.0),
+        ),
+        button::Status::Pressed => (
+            Color::from_rgb(0.36, 0.29, 0.82),
+            Color::WHITE,
+            Color::from_rgb(0.40, 0.33, 0.90),
+        ),
+        button::Status::Disabled => (
+            Color::from_rgb(0.16, 0.15, 0.28),
+            ICON_MUTED,
+            Color::from_rgb(0.20, 0.19, 0.34),
+        ),
+    };
+
+    action_button(background, text_color, border_color)
+}
+
+pub(crate) fn secondary_action(_theme: &Theme, status: button::Status) -> button::Style {
+    let (background, text_color, border_color) = match status {
+        button::Status::Active => (
+            Color::from_rgb(0.105, 0.112, 0.135),
+            BUTTON_TEXT,
+            Color::from_rgb(0.24, 0.25, 0.30),
+        ),
+        button::Status::Hovered => (
+            Color::from_rgb(0.14, 0.15, 0.18),
+            Color::WHITE,
+            Color::from_rgb(0.32, 0.33, 0.39),
+        ),
+        button::Status::Pressed => (
+            INSET_BACKGROUND,
+            BUTTON_TEXT,
+            Color::from_rgb(0.28, 0.29, 0.35),
+        ),
+        button::Status::Disabled => (
+            Color::from_rgb(0.075, 0.08, 0.095),
+            ICON_MUTED,
+            Color::from_rgb(0.15, 0.16, 0.19),
+        ),
+    };
+
+    action_button(background, text_color, border_color)
+}
+
+pub(crate) fn destructive_action(_theme: &Theme, status: button::Status) -> button::Style {
+    let (background, text_color, border_color) = match status {
+        button::Status::Active => (
+            Color::from_rgb(0.11, 0.085, 0.10),
+            DANGER_TEXT,
+            Color::from_rgb(0.36, 0.17, 0.20),
+        ),
+        button::Status::Hovered => (
+            Color::from_rgb(0.18, 0.08, 0.095),
+            Color::from_rgb(1.0, 0.83, 0.84),
+            Color::from_rgb(0.60, 0.24, 0.27),
+        ),
+        button::Status::Pressed => (Color::from_rgb(0.22, 0.075, 0.09), Color::WHITE, DANGER),
+        button::Status::Disabled => (
+            Color::from_rgb(0.075, 0.08, 0.095),
+            ICON_MUTED,
+            Color::from_rgb(0.15, 0.16, 0.19),
+        ),
+    };
+
+    action_button(background, text_color, border_color)
+}
+
+fn action_button(background: Color, text_color: Color, border_color: Color) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(background)),
+        text_color,
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: 7.0.into(),
+        },
+        shadow: Shadow::default(),
+        snap: true,
+    }
 }

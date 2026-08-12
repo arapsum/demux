@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use iced::font::Weight;
-use iced::widget::{button, column, container, row, rule, scrollable, space, text};
+use iced::widget::{button, column, container, row, rule, scrollable, space, stack, text};
 use iced::{Element, Fill, FillPortion, Font, Padding, Task};
 
 use crate::{
@@ -14,8 +14,12 @@ use crate::{
 };
 
 use super::{
+    drop_zone, icon,
     presentation::JobPresentation,
-    style::{DANGER, DANGER_TEXT, TEXT_MUTED, error_panel, inset_panel, panel, selected_row},
+    style::{
+        BUTTON_TEXT, DANGER, DANGER_TEXT, ICON_MUTED, TEXT_MUTED, destructive_action, error_panel,
+        inset_panel, panel, primary_action, secondary_action, selected_row,
+    },
 };
 
 const DROP_BATCH_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
@@ -27,6 +31,7 @@ pub enum Message {
     AddFolder,
     PathsSelected(Vec<PathBuf>),
     PathsDropped(Vec<PathBuf>),
+    DropHoverChanged(bool),
     DropBatchReady(u64),
     IntakeCompleted(IntakeResult),
     ProbeCompleted {
@@ -64,6 +69,7 @@ pub(crate) struct Queue {
     picking_file: bool,
     discovering: bool,
     dropped_paths: Vec<PathBuf>,
+    drop_hovered: bool,
     drop_batch: u64,
     rejected: Vec<RejectedInput>,
     visible_jobs: usize,
@@ -78,6 +84,7 @@ impl Queue {
             picking_file: false,
             discovering: false,
             dropped_paths: Vec::new(),
+            drop_hovered: false,
             drop_batch: 0,
             rejected: Vec::new(),
             visible_jobs: VISIBLE_JOB_BATCH,
@@ -122,6 +129,7 @@ impl Queue {
                 (action, Task::none())
             }
             Message::PathsDropped(paths) => {
+                self.drop_hovered = false;
                 self.dropped_paths.extend(paths);
                 self.drop_batch += 1;
                 let batch = self.drop_batch;
@@ -129,6 +137,10 @@ impl Queue {
                     Action::None,
                     Task::perform(wait_for_drop_batch(batch), Message::DropBatchReady),
                 )
+            }
+            Message::DropHoverChanged(hovered) => {
+                self.drop_hovered = hovered;
+                (Action::None, Task::none())
             }
             Message::DropBatchReady(batch) => {
                 if batch != self.drop_batch || self.dropped_paths.is_empty() {
@@ -328,7 +340,9 @@ impl Queue {
     }
 
     pub(crate) fn view<'a>(&'a self, error: Option<&'a str>) -> Element<'a, Message> {
-        let choose_copy = if self.picking_file {
+        let choose_copy = if self.drop_hovered {
+            "Drop to add these videos"
+        } else if self.picking_file {
             "Waiting for file selection…"
         } else if self.discovering {
             "Discovering supported media…"
@@ -342,34 +356,97 @@ impl Queue {
 
         let intake_enabled = !self.picking_file && !self.discovering;
 
-        let add_button = button(text("Add Files").size(15))
-            .padding(Padding::from([10, 16]))
-            .style(button::primary)
-            .on_press_maybe(intake_enabled.then_some(Message::AddFiles));
-        let folder_button = button(text("Add Folder").size(15))
-            .padding(Padding::from([10, 16]))
-            .on_press_maybe(intake_enabled.then_some(Message::AddFolder));
+        let add_button = button(
+            row![
+                icon::add_files(if intake_enabled {
+                    iced::Color::WHITE
+                } else {
+                    ICON_MUTED
+                }),
+                text("Add Files").size(14)
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding::from([10, 16]))
+        .style(primary_action)
+        .on_press_maybe(intake_enabled.then_some(Message::AddFiles));
+        let folder_button = button(
+            row![
+                icon::add_folder(if intake_enabled {
+                    BUTTON_TEXT
+                } else {
+                    ICON_MUTED
+                }),
+                text("Add Folder").size(14)
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding::from([10, 16]))
+        .style(secondary_action)
+        .on_press_maybe(intake_enabled.then_some(Message::AddFolder));
 
-        let chooser = container(
+        let remove_message = self
+            .selected()
+            .filter(|job| !matches!(job.status, JobStatus::Ripping))
+            .map(|job| Message::Remove(job.id.clone()));
+        let remove_enabled = remove_message.is_some();
+        let remove_button = button(
+            row![
+                icon::remove(if remove_enabled {
+                    DANGER_TEXT
+                } else {
+                    ICON_MUTED
+                }),
+                text("Remove").size(14)
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding::from([10, 16]))
+        .style(destructive_action)
+        .on_press_maybe(remove_message);
+
+        let chooser_copy = container(
             column![
-                text(choose_copy).size(18).font(Font {
+                icon::media_file(if self.drop_hovered {
+                    super::style::ACCENT
+                } else {
+                    ICON_MUTED
+                }),
+                text(choose_copy).size(17).font(Font {
                     weight: Weight::Semibold,
                     ..Font::default()
                 }),
-                text("MP4, MKV, MOV, AVI, WMV, FLV, MPEG")
+                text("Supports MP4, MKV, MOV, AVI, WMV, FLV, MPEG, and more")
                     .size(13)
                     .color(TEXT_MUTED),
-                row![add_button, folder_button].spacing(8),
             ]
             .spacing(10)
             .align_x(iced::Alignment::Center),
         )
         .width(Fill)
-        .padding(Padding::from([24, 18]))
+        .height(Fill)
         .center_x(Fill)
-        .style(inset_panel);
+        .center_y(Fill);
 
-        let mut content = column![chooser, self.queue_panel()].spacing(14);
+        let chooser = container(stack![drop_zone::chrome(self.drop_hovered), chooser_copy,])
+            .width(Fill)
+            .height(150);
+
+        let intake = container(
+            column![
+                chooser,
+                row![add_button, folder_button, remove_button].spacing(8)
+            ]
+            .spacing(10),
+        )
+        .width(Fill)
+        .padding(10)
+        .style(panel);
+
+        let mut content = column![intake, self.queue_panel()].spacing(10);
         if !self.rejected.is_empty() {
             let hidden = self.rejected.len().saturating_sub(3);
             let rejected = self.rejected.iter().take(3).fold(
@@ -444,13 +521,6 @@ impl Queue {
                 ..Font::default()
             }),
             space::horizontal(),
-            button(text("Remove").size(13))
-                .padding(Padding::from([7, 11]))
-                .on_press_maybe(
-                    self.selected()
-                        .filter(|job| !matches!(job.status, JobStatus::Ripping))
-                        .map(|job| Message::Remove(job.id.clone())),
-                ),
             text(match self.jobs.len() {
                 0 => "No files".into(),
                 1 => "1 file".into(),
@@ -805,6 +875,17 @@ mod tests {
         assert_eq!(action, Action::None);
         assert_eq!(queue.dropped_paths, [PathBuf::from("later.mp4")]);
         assert_eq!(queue.drop_batch, 1);
+    }
+
+    #[test]
+    fn drop_hover_state_tracks_window_events_and_clears_on_drop() {
+        let mut queue = Queue::new();
+
+        let _ = queue.update(Message::DropHoverChanged(true));
+        assert!(queue.drop_hovered);
+
+        let _ = queue.update(Message::PathsDropped(vec![PathBuf::from("video.mp4")]));
+        assert!(!queue.drop_hovered);
     }
 
     #[test]
