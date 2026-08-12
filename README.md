@@ -62,6 +62,12 @@ FFmpeg service
 
 This separation keeps process management out of the view layer and makes the FFmpeg integration testable without launching the desktop application.
 
+Subsystem adapters retain their specific error types, while application runtime
+operations promote failures into the unified `demux::Error`. Iced task messages
+share those typed errors through `Arc` so messages remain cloneable; conversion
+to human-readable text happens only when persistent job or interface state is
+updated.
+
 The GUI follows a composed-state architecture. `Demux` is the composition root,
 while each independent surface owns its state, local messages, initialization,
 update logic, and view. The root maps child tasks and translates explicit child

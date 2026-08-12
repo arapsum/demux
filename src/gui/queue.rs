@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    drop_zone, icon,
+    TaskResult, drop_zone, icon,
     presentation::{JobPresentation, format_size},
     style::{
         BUTTON_TEXT, DANGER, DANGER_TEXT, ICON_MUTED, TEXT_MUTED, destructive_action, error_panel,
@@ -40,11 +40,11 @@ pub enum Message {
     IntakeCompleted(IntakeResult),
     ProbeCompleted {
         job_id: JobId,
-        result: Result<MediaInfo, String>,
+        result: TaskResult<MediaInfo>,
     },
     OutputResolved {
         job_id: JobId,
-        result: Result<PathBuf, String>,
+        result: TaskResult<PathBuf>,
     },
     ShowMore,
     DismissRejected,
@@ -53,7 +53,7 @@ pub enum Message {
     StartQueue,
     RipCompleted {
         job_id: JobId,
-        result: Result<RipOutcome, String>,
+        result: TaskResult<RipOutcome>,
     },
 }
 
@@ -188,7 +188,9 @@ impl Queue {
                         job.record_metadata(metadata);
                         (Action::None, Task::none())
                     }
-                    Err(message) => {
+                    Err(error) => {
+                        tracing::warn!(job_id = job_id.0, error = %error, "media probe failed");
+                        let message = error.to_string();
                         job.fail(message.clone());
                         (Action::ProbeFailed(message), Task::none())
                     }
@@ -358,7 +360,7 @@ impl Queue {
         }
     }
 
-    fn output_resolved(&mut self, job_id: &JobId, result: Result<PathBuf, String>) -> Action {
+    fn output_resolved(&mut self, job_id: &JobId, result: TaskResult<PathBuf>) -> Action {
         if self.runner.as_ref().and_then(QueueRunner::active) != Some(job_id) {
             return Action::None;
         }
@@ -377,8 +379,9 @@ impl Queue {
                     request: RipRequest::new(job.input.clone(), output),
                 }
             }
-            Err(message) => {
-                job.fail(message);
+            Err(error) => {
+                tracing::error!(job_id = job_id.0, error = %error, "output resolution failed");
+                job.fail(error.to_string());
                 if let Some(runner) = &mut self.runner {
                     runner.finish_active(job_id, false);
                 }
@@ -387,7 +390,7 @@ impl Queue {
         }
     }
 
-    fn finish_active(&mut self, job_id: &JobId, result: Result<RipOutcome, String>) -> Action {
+    fn finish_active(&mut self, job_id: &JobId, result: TaskResult<RipOutcome>) -> Action {
         if self.runner.as_ref().and_then(QueueRunner::active) != Some(job_id) {
             return Action::None;
         }
@@ -403,8 +406,9 @@ impl Queue {
                 job.complete();
                 true
             }
-            Err(message) => {
-                job.fail(message);
+            Err(error) => {
+                tracing::error!(job_id = job_id.0, error = %error, "audio extraction failed");
+                job.fail(error.to_string());
                 false
             }
         };
@@ -850,11 +854,15 @@ async fn pick_video_folder() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use crate::model::media::AudioMetadata;
 
     use super::*;
+
+    fn task_error(message: &str) -> Arc<crate::Error> {
+        Arc::new(std::io::Error::other(message).into())
+    }
 
     fn metadata() -> MediaInfo {
         MediaInfo {
@@ -930,7 +938,7 @@ mod tests {
 
         let (action, _) = queue.update(Message::ProbeCompleted {
             job_id,
-            result: Err("No audio stream was found".into()),
+            result: Err(task_error("No audio stream was found")),
         });
 
         assert_eq!(
@@ -954,7 +962,7 @@ mod tests {
 
         let (action, _) = queue.update(Message::ProbeCompleted {
             job_id,
-            result: Err("late failure".into()),
+            result: Err(task_error("late failure")),
         });
 
         assert_eq!(action, Action::None);
@@ -988,7 +996,7 @@ mod tests {
             })
         ));
         assert_eq!(
-            queue.finish_active(&job_id, Err("late failure".into())),
+            queue.finish_active(&job_id, Err(task_error("late failure"))),
             Action::None
         );
         assert!(matches!(
@@ -1018,7 +1026,7 @@ mod tests {
         assert_eq!(queue.start_queue(), Action::None);
 
         let _ = queue.output_resolved(&first, Ok(PathBuf::from("/music/first.mp3")));
-        let second_action = queue.finish_active(&first, Err("first failed".into()));
+        let second_action = queue.finish_active(&first, Err(task_error("first failed")));
         assert!(matches!(
             second_action,
             Action::ResolveOutput { job_id, .. } if job_id == second
@@ -1058,7 +1066,7 @@ mod tests {
 
         let _ = queue.update(Message::ProbeCompleted {
             job_id: failed,
-            result: Err("No audio stream was found".into()),
+            result: Err(task_error("No audio stream was found")),
         });
         assert!(queue.can_start());
         assert!(matches!(queue.start_queue(), Action::ResolveOutput { .. }));

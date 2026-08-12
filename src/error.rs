@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::{
     ffmpeg::{DependencyError, FFmpegError},
     ffprobe,
@@ -16,6 +18,12 @@ use crate::{
 /// - [`Io`](Self::Io): An application I/O operation failed.
 /// - [`Probe`](Self::Probe): Media metadata could not be probed with
 ///   `ffprobe`.
+/// - [`BackgroundTask`](Self::BackgroundTask): Tokio could not complete a
+///   blocking runtime task.
+/// - [`ProbeScheduling`](Self::ProbeScheduling): A bounded probe could not
+///   acquire its concurrency permit.
+/// - [`OutputInspection`](Self::OutputInspection): An output path could not
+///   be inspected while applying the collision policy.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Wraps a failure while detecting or running a required dependency.
@@ -30,6 +38,44 @@ pub enum Error {
     /// Wraps a failure while probing media metadata with `ffprobe`.
     #[error(transparent)]
     Probe(#[from] ffprobe::ProbeError),
+    /// Wraps a failure reported by a Tokio background task.
+    #[error("background task failed: {0}")]
+    BackgroundTask(#[from] tokio::task::JoinError),
+    /// Wraps a failure to acquire a bounded media-probe permit.
+    #[error("could not schedule media probe: {0}")]
+    ProbeScheduling(#[from] tokio::sync::AcquireError),
+    /// Adds the requested output path to an I/O failure from collision checks.
+    #[error("could not inspect output path `{path}`: {source}")]
+    OutputInspection {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subsystem_errors_keep_their_typed_variant() {
+        let error = Error::from(ffprobe::ProbeError::NoAudio);
+
+        assert!(matches!(error, Error::Probe(ffprobe::ProbeError::NoAudio)));
+    }
+
+    #[test]
+    fn output_inspection_errors_include_the_requested_path() {
+        let error = Error::OutputInspection {
+            path: PathBuf::from("/music/song.mp3"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "could not inspect output path `/music/song.mp3`: denied"
+        );
+    }
+}

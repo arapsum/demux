@@ -30,9 +30,17 @@ mod toast;
 mod update;
 mod view;
 
+use std::sync::Arc;
+
 use iced::{Color, Size, Subscription, Theme, event, theme::Palette, window};
 
 pub use self::{message::Message, state::Demux};
+
+pub(crate) type TaskResult<T> = std::result::Result<T, Arc<crate::Error>>;
+
+fn share_error<T>(result: crate::Result<T>) -> TaskResult<T> {
+    result.map_err(Arc::new)
+}
 
 pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)

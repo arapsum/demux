@@ -3,16 +3,17 @@ use crate::{
     model::job::JobId,
 };
 
+use super::TaskResult;
 use super::{output_settings, queue, toast};
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    DependenciesChecked(Result<Dependencies, String>),
+    DependenciesChecked(TaskResult<Dependencies>),
     Queue(queue::Message),
     OutputSettings(output_settings::Message),
     RipCompleted {
         job_id: JobId,
-        result: Result<RipOutcome, String>,
+        result: TaskResult<RipOutcome>,
     },
     Notifications(toast::Message),
 }

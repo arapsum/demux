@@ -2,13 +2,15 @@ use iced::Task;
 
 use crate::{app::runtime, ffmpeg::DependencyState};
 
-use super::{message::Message, output_settings, queue, state::Demux};
+use super::{message::Message, output_settings, queue, share_error, state::Demux};
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
         (
             Self::default(),
-            Task::perform(runtime::check_dependencies(), Message::DependenciesChecked),
+            Task::perform(runtime::check_dependencies(), |result| {
+                Message::DependenciesChecked(share_error(result))
+            }),
         )
     }
 
@@ -19,7 +21,9 @@ impl Demux {
                     Ok(dependencies) => {
                         self.dependency_state = DependencyState::Ready(dependencies);
                     }
-                    Err(message) => {
+                    Err(error) => {
+                        tracing::error!(error = %error, "dependency check failed");
+                        let message = error.to_string();
                         self.dependency_state = DependencyState::Failed {
                             program: "ffmpeg/ffprobe",
                             message: message.clone(),
@@ -103,14 +107,22 @@ impl Demux {
                     Task::perform(
                         runtime::probe_bounded(job_id.clone(), input),
                         move |result| {
-                            Message::Queue(queue::Message::ProbeCompleted { job_id, result })
+                            Message::Queue(queue::Message::ProbeCompleted {
+                                job_id,
+                                result: share_error(result),
+                            })
                         },
                     )
                 }))
             }
             queue::Action::ResolveOutput { job_id, requested } => Task::perform(
                 runtime::resolve_output(job_id.clone(), requested),
-                move |result| Message::Queue(queue::Message::OutputResolved { job_id, result }),
+                move |result| {
+                    Message::Queue(queue::Message::OutputResolved {
+                        job_id,
+                        result: share_error(result),
+                    })
+                },
             ),
             queue::Action::RipRequested { job_id, request } => {
                 if !matches!(self.dependency_state, DependencyState::Ready(_))
@@ -120,7 +132,10 @@ impl Demux {
                 }
                 self.error = None;
                 Task::perform(runtime::rip(job_id.clone(), request), move |result| {
-                    Message::RipCompleted { job_id, result }
+                    Message::RipCompleted {
+                        job_id,
+                        result: share_error(result),
+                    }
                 })
             }
             queue::Action::QueueFinished(summary) => {
@@ -154,7 +169,7 @@ impl Demux {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, time::Duration};
+    use std::{path::PathBuf, sync::Arc, time::Duration};
 
     use crate::{
         ffmpeg::{Dependencies, RipOutcome},
@@ -163,6 +178,10 @@ mod tests {
     };
 
     use super::*;
+
+    fn task_error(message: &str) -> Arc<crate::Error> {
+        Arc::new(std::io::Error::other(message).into())
+    }
 
     fn metadata() -> MediaInfo {
         MediaInfo {
@@ -234,7 +253,7 @@ mod tests {
 
         let _ = state.update(Message::Queue(queue::Message::ProbeCompleted {
             job_id,
-            result: Err("No audio stream was found".into()),
+            result: Err(task_error("No audio stream was found")),
         }));
 
         assert!(matches!(
@@ -256,7 +275,7 @@ mod tests {
         }));
         let _ = state.update(Message::Queue(queue::Message::ProbeCompleted {
             job_id: failed,
-            result: Err("No audio stream was found".into()),
+            result: Err(task_error("No audio stream was found")),
         }));
         assert!(state.error.is_some());
 
@@ -289,7 +308,7 @@ mod tests {
 
         let _ = state.update(Message::RipCompleted {
             job_id,
-            result: Err("FFmpeg exited with status 1".into()),
+            result: Err(task_error("FFmpeg exited with status 1")),
         });
 
         assert_eq!(state.notifications.len(), 1);
