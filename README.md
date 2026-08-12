@@ -73,7 +73,8 @@ From the repository root:
 cargo run
 ```
 
-The current binary is a scaffold and prints a greeting. Run the test suite with:
+The current binary checks for FFmpeg and FFprobe, then prompts for an input
+video and output location. Run the test suite with:
 
 ```bash
 cargo test
