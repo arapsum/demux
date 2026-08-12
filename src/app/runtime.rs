@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use tracing::{Instrument, info_span};
 
@@ -7,6 +7,22 @@ use crate::{
     ffprobe,
     model::{job::JobId, media::MediaInfo},
 };
+
+pub const PROBE_CONCURRENCY: usize = 4;
+
+pub async fn probe_bounded(job_id: JobId, input: PathBuf) -> Result<MediaInfo, String> {
+    static SEMAPHORE: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    let semaphore = SEMAPHORE
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(PROBE_CONCURRENCY)))
+        .clone();
+    let permit = semaphore
+        .acquire_owned()
+        .await
+        .map_err(|error| format!("Could not schedule media probe: {error}"))?;
+    let result = probe(job_id, input).await;
+    drop(permit);
+    result
+}
 
 /// Runs production dependency detection away from the GUI runtime thread.
 pub async fn check_dependencies() -> Result<Dependencies, String> {

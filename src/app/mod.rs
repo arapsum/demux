@@ -1,4 +1,5 @@
 mod cli;
+pub(crate) mod intake;
 mod output;
 pub(crate) mod runtime;
 mod services;
