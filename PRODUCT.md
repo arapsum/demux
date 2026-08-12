@@ -27,7 +27,10 @@ Demux is a cross-platform desktop utility used with local media files and locall
 - Probe media asynchronously and display duration, container, and audio-stream metadata.
 - Extract MP3 audio with libmp3lame at 192 kbps.
 - Keep the interface responsive while probing and extracting.
-- FFmpeg progress streaming, cancellation, multi-file queue execution, drag and drop, folders, artwork, metadata embedding, normalization, and pause are later milestones.
+- Accept multiple files, recursively discover supported media in folders, and
+  accept desktop file or folder drops.
+- FFmpeg queue execution, progress streaming, cancellation, artwork, metadata
+  embedding, normalization, and pause are later milestones.
 
 ## Brand Commitments
 

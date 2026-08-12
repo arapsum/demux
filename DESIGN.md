@@ -151,9 +151,11 @@ during or after extraction are disabled.
 
 ### Job Row
 
-The selected job shows filename, source path, textual status, duration,
-container, codec, sample rate, channels, and fixed MP3 output. Unknown probe
-values say “Unknown”; they never fall back to zero.
+Each queued job shows filename, source path, textual status, duration,
+container, codec, sample rate, channels, source size, and fixed MP3 output.
+The active selection receives the violet-neutral selected border while other
+rows remain inset neutral surfaces. Unknown probe values say “Unknown”; they
+never fall back to zero. A failed row carries its own actionable probe error.
 
 ### Toasts
 

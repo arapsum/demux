@@ -3,7 +3,7 @@
 Demux is a native Rust desktop utility for extracting audio from video files with [FFmpeg](https://ffmpeg.org/). Its goal is to make a common command-line workflow feel clear and approachable: choose your videos, configure the output, start the queue, and watch the work happen.
 
 > **Status:** early development. Demux now has a functional first Iced shell for
-> selecting, probing, and extracting one video at a time. Queue execution,
+> selecting and probing multiple videos, then extracting the selected job. Queue execution,
 > streaming progress, cancellation, and the complete interface remain planned.
 
 ## Product direction
@@ -116,10 +116,11 @@ connects each reference-interface feature to its required backend behavior.
 
 - [x] Create the initial Rust package and named binary.
 - [x] Add the first Iced application shell and desktop layout.
-- [ ] Define queue, settings, job, and progress models.
+- [x] Define queue, settings, and job models.
 - [x] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
 - [ ] Implement extraction, cancellation, progress parsing, and log streaming.
-- [ ] Connect the drop zone, queue, output settings, progress panel, and controls.
+- [x] Connect multi-file and folder intake, desktop drops, queue selection, and removal.
+- [ ] Connect the progress panel and queue execution controls.
 - [ ] Add packaging and platform-specific distribution guidance.
 
 ## License
