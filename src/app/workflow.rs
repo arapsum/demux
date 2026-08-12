@@ -1,3 +1,5 @@
+use tracing::{Instrument, info_span};
+
 use crate::{
     App, Result,
     ffmpeg::{Dependencies, DependencyState, RipRequest},
@@ -66,11 +68,15 @@ impl<D: DependencyChecker, P, R> RipWorkflow<D, P, R> {
 
         match self.dependency_checker.detect() {
             Ok(dependencies) => {
+                tracing::info!(ffmpeg = %dependencies.ffmpeg_version, ffprobe = %dependencies.ffprobe_version, "external dependencies detected");
+
                 app.set_dependency_state(DependencyState::Ready(dependencies.clone()));
                 reporter.report(WorkflowEvent::DependenciesReady(dependencies));
                 Ok(())
             }
             Err(error) => {
+                tracing::error!(error = %error, "external dependency check failed");
+
                 app.set_dependency_state(DependencyState::from(&error));
                 Err(error.into())
             }
@@ -88,50 +94,88 @@ impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
         let input = request.input.to_string_lossy().into_owned();
         let output = request.output.to_string_lossy().into_owned();
         let mut job = app.create_job(input, output);
+
+        let span = info_span!(
+            "rip_job",
+            job_id = job.id.0,
+            encoder = %request.options.encoder,
+            bitrate_kbps = request.options.bitrate_kbps,
+        );
+
         let id = job.id.clone();
 
-        job.start_probing();
-        match self.media_probe.inspect(&job.input).await {
-            Ok(metadata) => {
-                job.record_metadata(metadata.clone());
-                reporter.report(WorkflowEvent::MetadataReady(metadata));
-            }
-            Err(error) => {
-                let message = error.to_string();
-                job.fail(message.clone());
-                reporter.report(WorkflowEvent::Failed {
-                    stage: WorkflowStage::Probing,
-                    message,
-                });
-                app.finish_job(job);
-                reporter.report(WorkflowEvent::Finished);
-                return id;
-            }
-        }
+        async move {
+            tracing::info!("job started");
+            tracing::debug!(
+                input = %job.input,
+                output = %job.output,
+                "resolved job paths"
+            );
 
-        job.start_ripping();
-        reporter.report(WorkflowEvent::Ripping);
-        match self.audio_ripper.rip(&request).await {
-            Ok(outcome) => {
-                job.complete();
-                reporter.report(WorkflowEvent::Completed {
-                    output: job.output.clone(),
-                    status: outcome.status,
-                });
-            }
-            Err(error) => {
-                let message = error.to_string();
-                job.fail(message.clone());
-                reporter.report(WorkflowEvent::Failed {
-                    stage: WorkflowStage::Ripping,
-                    message,
-                });
-            }
-        }
+            job.start_probing();
 
-        app.finish_job(job);
-        reporter.report(WorkflowEvent::Finished);
-        id
+            match self.media_probe.inspect(&job.input).await {
+                Ok(metadata) => {
+                    tracing::debug!(
+                        duration_ms = %metadata.duration.as_millis(),
+                        container = %metadata.container,
+                        audio_codec = %metadata.audio.codec,
+                        stream_index = metadata.audio.stream_index,
+                        sample_rate = ?metadata.audio.sample_rate,
+                        channels = ?metadata.audio.channels,
+                        "media probe completed"
+                    );
+
+                    job.record_metadata(metadata.clone());
+                    reporter.report(WorkflowEvent::MetadataReady(metadata));
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, stage = "probing", "job failed");
+
+                    let message = error.to_string();
+                    job.fail(message.clone());
+                    reporter.report(WorkflowEvent::Failed {
+                        stage: WorkflowStage::Probing,
+                        message,
+                    });
+                    app.finish_job(job);
+                    reporter.report(WorkflowEvent::Finished);
+                    return id;
+                }
+            }
+
+            job.start_ripping();
+            tracing::info!("audio extraction started");
+            reporter.report(WorkflowEvent::Ripping);
+
+            match self.audio_ripper.rip(&request).await {
+                Ok(outcome) => {
+                    tracing::info!(status = %outcome.status, "job completed");
+
+                    job.complete();
+                    reporter.report(WorkflowEvent::Completed {
+                        output: job.output.clone(),
+                        status: outcome.status,
+                    });
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, stage = "ripping", "job failed");
+
+                    let message = error.to_string();
+                    job.fail(message.clone());
+                    reporter.report(WorkflowEvent::Failed {
+                        stage: WorkflowStage::Ripping,
+                        message,
+                    });
+                }
+            }
+
+            app.finish_job(job);
+            reporter.report(WorkflowEvent::Finished);
+            id
+        }
+        .instrument(span)
+        .await
     }
 }
 

@@ -139,6 +139,8 @@ pub fn detect_dependencies() -> Result<Dependencies, DependencyError> {
 /// detect_program("ffprobe")
 /// ```
 fn detect_program(program: &'static str) -> Result<String, DependencyError> {
+    tracing::trace!(program, "executing dependency version check");
+
     let output = Command::new(program)
         .arg("-version")
         .output()

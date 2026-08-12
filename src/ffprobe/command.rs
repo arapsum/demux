@@ -76,7 +76,12 @@ pub fn metadata(output: &Output) -> ProbeResult<MediaInfo> {
 ///
 /// This is the application-facing probing API; raw process output and JSON
 /// conversion remain internal details of the adapter.
+#[tracing::instrument(name = "ffprobe_inspect", level = "debug", skip_all)]
 pub async fn inspect(input: &str) -> ProbeResult<MediaInfo> {
+    tracing::trace!(input = %input, "launching ffprobe");
     let output = probe(input).await?;
+
+    tracing::trace!(stdout_bytes = output.stdout.len(), "parsing ffprobe output");
+
     metadata(&output)
 }

@@ -67,10 +67,7 @@ impl WorkflowReporter for Cli {
                 println!("Using {}", dependencies.ffmpeg_version);
                 println!("Using {}", dependencies.ffprobe_version);
             }
-            WorkflowEvent::MetadataReady(metadata) => {
-                println!("==== Probe output ====");
-                println!("{metadata:#?}");
-            }
+            WorkflowEvent::MetadataReady(_) => {}
             WorkflowEvent::Ripping => println!("==== Ripping audio... ===="),
             WorkflowEvent::Completed { output, status } => {
                 println!("Audio ripped successfully: {output}");

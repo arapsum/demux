@@ -106,11 +106,28 @@ impl<R> FfmpegAudioRipper<R> {
 }
 
 impl<R: ProcessRunner> FfmpegAudioRipper<R> {
+    #[tracing::instrument(
+        name = "ffmpeg_rip",
+        level = "debug",
+        skip_all,
+        fields(
+            encoder = %request.options.encoder,
+            bitrate_kbps = request.options.bitrate_kbps,
+        )
+    )]
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
+        tracing::debug!("launching ffmpeg process");
+
         let output = self
             .runner
             .run(FfmpegCommandBuilder::build_rip(request))
             .await?;
+
+        tracing::debug!(
+            status = %output.status,
+            stderr_bytes = output.stderr.len(),
+            "ffmpeg process exited"
+        );
 
         if !output.status.success() {
             return Err(FFmpegError::ProcessFailed {
