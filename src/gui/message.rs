@@ -5,7 +5,7 @@ use crate::{
     model::{job::JobId, media::MediaInfo},
 };
 
-use super::toast::ToastId;
+use super::{output_settings, toast};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -16,13 +16,10 @@ pub enum Message {
         job_id: JobId,
         result: Result<MediaInfo, String>,
     },
-    OutputFolderChanged(String),
-    BrowseOutputFolder,
-    OutputFolderSelected(Option<PathBuf>),
-    StartRipping,
+    OutputSettings(output_settings::Message),
     RipCompleted {
         job_id: JobId,
         result: Result<RipOutcome, String>,
     },
-    DismissToast(ToastId),
+    Notifications(toast::Message),
 }

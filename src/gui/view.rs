@@ -1,23 +1,21 @@
 use std::path::Path;
 
 use iced::{
-    Border, Color, Element, Fill, FillPortion, Font, Padding, Shadow, Theme,
+    Color, Element, Fill, FillPortion, Font, Padding,
     font::Weight,
-    widget::{button, column, container, row, rule, scrollable, space, text, text_input},
+    widget::{button, column, container, row, rule, scrollable, space, text},
 };
 
-use crate::{
-    ffmpeg::DependencyState,
-    model::job::{JobStatus, RipJob},
+use crate::model::job::{JobStatus, RipJob};
+
+use super::{
+    message::Message,
+    state::Demux,
+    style::{
+        ACCENT, DANGER, SUCCESS, TEXT_MUTED, WARNING, accent_tile, app_background, error_panel,
+        inset_panel, panel, selected_row,
+    },
 };
-
-use super::{message::Message, state::Demux, toast};
-
-const TEXT_MUTED: Color = Color::from_rgb(0.62, 0.64, 0.70);
-const ACCENT: Color = Color::from_rgb(0.43, 0.36, 0.96);
-const SUCCESS: Color = Color::from_rgb(0.35, 0.78, 0.57);
-const WARNING: Color = Color::from_rgb(0.96, 0.68, 0.30);
-const DANGER: Color = Color::from_rgb(0.94, 0.39, 0.42);
 
 impl Demux {
     pub fn view(&self) -> Element<'_, Message> {
@@ -59,7 +57,7 @@ impl Demux {
             .padding(Padding::from([24, 26]))
             .style(app_background);
 
-        toast::Manager::new(content, &self.toasts).into()
+        self.notifications.view(content)
     }
 
     fn work_area(&self) -> Element<'_, Message> {
@@ -262,105 +260,13 @@ impl Demux {
     }
 
     fn settings_panel(&self) -> Element<'_, Message> {
-        let dependencies = match &self.dependency_state {
-            DependencyState::Checking => ("Checking FFmpeg…", WARNING),
-            DependencyState::Ready(_) => ("FFmpeg ready", SUCCESS),
-            DependencyState::Missing { .. } | DependencyState::Failed { .. } => {
-                ("FFmpeg unavailable", DANGER)
-            }
-        };
-
-        let output_input = text_input("Choose an output folder", &self.output_folder)
-            .padding(12)
-            .size(14);
-        let output_locked = matches!(
-            self.selected_job().map(|job| &job.status),
-            Some(JobStatus::Ripping | JobStatus::Completed)
-        );
-        let output_input = if output_locked {
-            output_input
-        } else {
-            output_input.on_input(Message::OutputFolderChanged)
-        };
-        let browse = button(text("Browse…").size(14)).padding(Padding::from([11, 14]));
-        let browse = if output_locked {
-            browse
-        } else {
-            browse.on_press(Message::BrowseOutputFolder)
-        };
-
-        let start = button(text("Start Ripping").size(15))
-            .width(Fill)
-            .padding(13)
-            .style(button::primary);
-        let start = if self.can_start() {
-            start.on_press(Message::StartRipping)
-        } else {
-            start
-        };
-
-        let selected_status = self
-            .selected_job()
-            .map(|job| status_label(&job.status).0)
-            .unwrap_or("Waiting for a file");
-
-        container(
-            column![
-                text("Output Settings").size(18).font(Font {
-                    weight: Weight::Semibold,
-                    ..Font::default()
-                }),
-                column![
-                    text("Output format").size(13).color(TEXT_MUTED),
-                    container(row![
-                        text("MP3").size(15),
-                        space::horizontal(),
-                        text("192 kbps").size(13).color(TEXT_MUTED)
-                    ])
-                    .width(Fill)
-                    .padding(12)
-                    .style(inset_panel),
-                ]
-                .spacing(7),
-                column![
-                    text("Output folder").size(13).color(TEXT_MUTED),
-                    row![output_input.width(Fill), browse].spacing(8),
-                    text("The MP3 filename is derived from the selected video.")
-                        .size(12)
-                        .color(TEXT_MUTED),
-                ]
-                .spacing(7),
-                container(
-                    column![
-                        text("Selected job").size(12).color(TEXT_MUTED),
-                        text(selected_status).size(16).font(Font {
-                            weight: Weight::Semibold,
-                            ..Font::default()
-                        }),
-                        text(dependencies.0).size(13).color(dependencies.1),
-                    ]
-                    .spacing(6),
-                )
-                .width(Fill)
-                .padding(14)
-                .style(inset_panel),
-                space::vertical(),
-                start,
-                text(if self.can_start() {
-                    "Ready to extract audio"
-                } else {
-                    "Add a valid video and wait for probing to finish"
-                })
-                .size(12)
-                .color(TEXT_MUTED),
-            ]
-            .spacing(18),
-        )
-        .width(FillPortion(3))
-        .height(Fill)
-        .padding(20)
-        .style(panel)
-        .into()
+        self.output_settings
+            .view(
+                &self.dependency_state,
+                self.selected_job().map(|job| &job.status),
+                self.can_start(),
+            )
+            .map(Message::OutputSettings)
     }
 }
 
@@ -387,63 +293,4 @@ fn format_duration(duration: std::time::Duration) -> String {
     } else {
         format!("{minutes:02}:{seconds:02}")
     }
-}
-
-fn app_background(_theme: &Theme) -> container::Style {
-    container::Style::default().background(Color::from_rgb(0.055, 0.06, 0.075))
-}
-
-fn panel(_theme: &Theme) -> container::Style {
-    container::Style::default()
-        .background(Color::from_rgb(0.085, 0.092, 0.112))
-        .border(Border {
-            color: Color::from_rgb(0.17, 0.18, 0.22),
-            width: 1.0,
-            radius: 14.0.into(),
-        })
-        .shadow(Shadow {
-            color: Color::from_rgba(0.0, 0.0, 0.0, 0.22),
-            offset: iced::Vector::new(0.0, 5.0),
-            blur_radius: 18.0,
-        })
-}
-
-fn inset_panel(_theme: &Theme) -> container::Style {
-    container::Style::default()
-        .background(Color::from_rgb(0.065, 0.07, 0.087))
-        .border(Border {
-            color: Color::from_rgb(0.19, 0.20, 0.24),
-            width: 1.0,
-            radius: 12.0.into(),
-        })
-}
-
-fn selected_row(_theme: &Theme) -> container::Style {
-    container::Style::default()
-        .background(Color::from_rgb(0.075, 0.08, 0.10))
-        .border(Border {
-            color: Color::from_rgb(0.30, 0.27, 0.55),
-            width: 1.0,
-            radius: 12.0.into(),
-        })
-}
-
-fn accent_tile(_theme: &Theme) -> container::Style {
-    container::Style::default()
-        .background(Color::from_rgb(0.20, 0.17, 0.43))
-        .border(Border {
-            color: Color::from_rgb(0.34, 0.29, 0.67),
-            width: 1.0,
-            radius: 12.0.into(),
-        })
-}
-
-fn error_panel(_theme: &Theme) -> container::Style {
-    container::Style::default()
-        .background(Color::from_rgb(0.16, 0.075, 0.085))
-        .border(Border {
-            color: Color::from_rgb(0.38, 0.14, 0.16),
-            width: 1.0,
-            radius: 12.0.into(),
-        })
 }

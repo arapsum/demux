@@ -10,8 +10,17 @@ use iced::{
     Alignment, Border, Color, Element, Event, Fill, Length, Padding, Point, Rectangle, Renderer,
     Size, Theme, Vector,
 };
+use std::time::Duration;
 
-use super::message::Message;
+use super::message::Message as AppMessage;
+
+const SUCCESS_DURATION: Duration = Duration::from_secs(6);
+const FAILURE_DURATION: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Dismiss(ToastId),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToastId(u64);
@@ -34,6 +43,71 @@ pub(crate) struct Toast {
     pub(crate) title: String,
     pub(crate) body: String,
     pub(crate) status: ToastStatus,
+}
+
+#[derive(Debug)]
+pub(crate) struct Notifications {
+    toasts: Vec<Toast>,
+    next_id: u64,
+}
+
+impl Notifications {
+    pub(crate) fn new() -> Self {
+        Self {
+            toasts: Vec::new(),
+            next_id: 1,
+        }
+    }
+
+    pub(crate) fn update(&mut self, message: Message) -> iced::Task<Message> {
+        match message {
+            Message::Dismiss(id) => {
+                self.toasts.retain(|toast| toast.id != id);
+                iced::Task::none()
+            }
+        }
+    }
+
+    pub(crate) fn success(
+        &mut self,
+        title: impl Into<String>,
+        body: impl Into<String>,
+    ) -> iced::Task<Message> {
+        self.push(Toast::success(title, body), SUCCESS_DURATION)
+    }
+
+    pub(crate) fn failure(
+        &mut self,
+        title: impl Into<String>,
+        body: impl Into<String>,
+    ) -> iced::Task<Message> {
+        self.push(Toast::danger(title, body), FAILURE_DURATION)
+    }
+
+    fn push(&mut self, toast: Toast, duration: Duration) -> iced::Task<Message> {
+        let id = ToastId::new(self.next_id);
+        self.next_id += 1;
+        self.toasts.push(toast.with_id(id));
+
+        iced::Task::perform(dismiss_after(id, duration), Message::Dismiss)
+    }
+
+    pub(crate) fn view<'a>(
+        &'a self,
+        content: impl Into<Element<'a, AppMessage>>,
+    ) -> Element<'a, AppMessage> {
+        Manager::new(content, &self.toasts).into()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.toasts.len()
+    }
+}
+
+async fn dismiss_after(id: ToastId, duration: Duration) -> ToastId {
+    tokio::time::sleep(duration).await;
+    id
 }
 
 impl Toast {
@@ -61,12 +135,12 @@ impl Toast {
 }
 
 pub(crate) struct Manager<'a> {
-    content: Element<'a, Message>,
-    toasts: Vec<Element<'a, Message>>,
+    content: Element<'a, AppMessage>,
+    toasts: Vec<Element<'a, AppMessage>>,
 }
 
 impl<'a> Manager<'a> {
-    pub(crate) fn new(content: impl Into<Element<'a, Message>>, toasts: &'a [Toast]) -> Self {
+    pub(crate) fn new(content: impl Into<Element<'a, AppMessage>>, toasts: &'a [Toast]) -> Self {
         Self {
             content: content.into(),
             toasts: toasts.iter().rev().take(3).map(toast_view).collect(),
@@ -74,7 +148,7 @@ impl<'a> Manager<'a> {
     }
 }
 
-fn toast_view(toast: &Toast) -> Element<'_, Message> {
+fn toast_view(toast: &Toast) -> Element<'_, AppMessage> {
     let status_color = match toast.status {
         ToastStatus::Success => Color::from_rgb(0.35, 0.78, 0.57),
         ToastStatus::Danger => Color::from_rgb(0.94, 0.39, 0.42),
@@ -98,7 +172,7 @@ fn toast_view(toast: &Toast) -> Element<'_, Message> {
                 button(text("Dismiss").size(12))
                     .padding(Padding::from([4, 6]))
                     .style(button::text)
-                    .on_press(Message::DismissToast(toast.id)),
+                    .on_press(AppMessage::Notifications(Message::Dismiss(toast.id))),
             ]
             .spacing(12)
             .align_y(iced::Alignment::Center),
@@ -134,7 +208,7 @@ fn danger_style(_theme: &Theme) -> container::Style {
         })
 }
 
-impl Widget<Message, Theme, Renderer> for Manager<'_> {
+impl Widget<AppMessage, Theme, Renderer> for Manager<'_> {
     fn size(&self) -> Size<Length> {
         self.content.as_widget().size()
     }
@@ -190,7 +264,7 @@ impl Widget<Message, Theme, Renderer> for Manager<'_> {
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
-        shell: &mut Shell<'_, Message>,
+        shell: &mut Shell<'_, AppMessage>,
         viewport: &Rectangle,
     ) {
         self.content.as_widget_mut().update(
@@ -250,7 +324,7 @@ impl Widget<Message, Theme, Renderer> for Manager<'_> {
         renderer: &Renderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
+    ) -> Option<overlay::Element<'b, AppMessage, Theme, Renderer>> {
         let (content_state, toasts_state) = tree.children.split_at_mut(1);
         let content = self.content.as_widget_mut().overlay(
             &mut content_state[0],
@@ -276,11 +350,11 @@ impl Widget<Message, Theme, Renderer> for Manager<'_> {
 struct ToastOverlay<'a, 'b> {
     position: Point,
     viewport: Rectangle,
-    toasts: &'b mut [Element<'a, Message>],
+    toasts: &'b mut [Element<'a, AppMessage>],
     trees: &'b mut [Tree],
 }
 
-impl overlay::Overlay<Message, Theme, Renderer> for ToastOverlay<'_, '_> {
+impl overlay::Overlay<AppMessage, Theme, Renderer> for ToastOverlay<'_, '_> {
     fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
         let limits = layout::Limits::new(Size::ZERO, bounds);
 
@@ -306,7 +380,7 @@ impl overlay::Overlay<Message, Theme, Renderer> for ToastOverlay<'_, '_> {
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
-        shell: &mut Shell<'_, Message>,
+        shell: &mut Shell<'_, AppMessage>,
     ) {
         let viewport = layout.bounds();
 
@@ -400,8 +474,42 @@ impl overlay::Overlay<Message, Theme, Renderer> for ToastOverlay<'_, '_> {
     }
 }
 
-impl<'a> From<Manager<'a>> for Element<'a, Message> {
+impl<'a> From<Manager<'a>> for Element<'a, AppMessage> {
     fn from(manager: Manager<'a>) -> Self {
         Element::new(manager)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn success_notification_keeps_its_content_and_status() {
+        let mut notifications = Notifications::new();
+
+        let _ = notifications.success(
+            "Ripping complete",
+            "example.mp3 is ready in your output folder.",
+        );
+
+        assert_eq!(notifications.toasts.len(), 1);
+        assert_eq!(notifications.toasts[0].title, "Ripping complete");
+        assert!(notifications.toasts[0].body.contains("example.mp3"));
+        assert_eq!(notifications.toasts[0].status, ToastStatus::Success);
+    }
+
+    #[test]
+    fn dismisses_only_the_requested_notification() {
+        let mut notifications = Notifications::new();
+        let _ = notifications.success("First", "First body");
+        let first = notifications.toasts[0].id;
+        let _ = notifications.failure("Second", "Second body");
+        let second = notifications.toasts[1].id;
+
+        let _ = notifications.update(Message::Dismiss(first));
+
+        assert_eq!(notifications.toasts.len(), 1);
+        assert_eq!(notifications.toasts[0].id, second);
     }
 }

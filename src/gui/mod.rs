@@ -12,16 +12,23 @@
 //!
 //! FORM: Reference-inherited desktop utility shell. Unreviewed and undocumented
 //! is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
+//!
+//! ARCHITECTURE: Demux is the composition root. Independent GUI surfaces own
+//! their local state, messages, initialization, update logic, and view. The root
+//! maps child tasks and translates child actions when a workflow crosses surface
+//! boundaries.
 
 mod message;
+mod output_settings;
 mod state;
+mod style;
 mod toast;
 mod update;
 mod view;
 
 use iced::{Color, Size, Theme, theme::Palette, window};
 
-pub use self::{message::Message, state::Demux, toast::ToastId};
+pub use self::{message::Message, state::Demux};
 
 pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)

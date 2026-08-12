@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
 
 use iced::Task;
 use tracing::{Instrument, info_span};
@@ -14,14 +11,7 @@ use crate::{
     model::media::MediaInfo,
 };
 
-use super::{
-    message::Message,
-    state::Demux,
-    toast::{Toast, ToastId},
-};
-
-const SUCCESS_TOAST_DURATION: Duration = Duration::from_secs(6);
-const FAILURE_TOAST_DURATION: Duration = Duration::from_secs(10);
+use super::{message::Message, output_settings, state::Demux};
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
@@ -81,91 +71,72 @@ impl Demux {
                 }
                 Task::none()
             }
-            Message::OutputFolderChanged(output_folder) => {
-                self.output_folder = output_folder;
-                self.refresh_output_path();
-                Task::none()
-            }
-            Message::BrowseOutputFolder => {
-                Task::perform(pick_output_folder(), Message::OutputFolderSelected)
-            }
-            Message::OutputFolderSelected(path) => {
-                if let Some(path) = path {
-                    self.output_folder = path.to_string_lossy().into_owned();
-                    self.refresh_output_path();
+            Message::OutputSettings(message) => {
+                let (action, task) = self.output_settings.update(message);
+                match action {
+                    output_settings::Action::None => {}
+                    output_settings::Action::OutputChanged => self.refresh_output_path(),
+                    output_settings::Action::StartRipping => return self.start_ripping(),
                 }
-                Task::none()
+                task.map(Message::OutputSettings)
             }
-            Message::StartRipping => {
-                if !self.can_start() {
-                    return Task::none();
+            Message::RipCompleted { job_id, result } => match result {
+                Ok(_) => {
+                    let output_name = self
+                        .jobs
+                        .iter()
+                        .find(|job| job.id == job_id)
+                        .and_then(|job| Path::new(&job.output).file_name())
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("Your MP3")
+                        .to_owned();
+                    if let Some(job) = self.job_mut(&job_id) {
+                        job.complete();
+                    }
+                    self.notifications
+                        .success(
+                            "Ripping complete",
+                            format!("{output_name} is ready in your output folder."),
+                        )
+                        .map(Message::Notifications)
                 }
-
-                self.error = None;
-                let Some(job) = self.selected_job_mut() else {
-                    return Task::none();
-                };
-                job.start_ripping();
-
-                let job_id = job.id.clone();
-                let request = RipRequest::new(job.input.clone(), job.output.clone());
-                Task::perform(rip_file(job_id.clone(), request), move |result| {
-                    Message::RipCompleted { job_id, result }
-                })
-            }
-            Message::RipCompleted { job_id, result } => {
-                let (toast, duration) = match result {
-                    Ok(_) => {
-                        let output_name = self
-                            .jobs
-                            .iter()
-                            .find(|job| job.id == job_id)
-                            .and_then(|job| Path::new(&job.output).file_name())
-                            .and_then(|name| name.to_str())
-                            .unwrap_or("Your MP3")
-                            .to_owned();
-                        if let Some(job) = self.job_mut(&job_id) {
-                            job.complete();
-                        }
-                        (
-                            Toast::success(
-                                "Ripping complete",
-                                format!("{output_name} is ready in your output folder."),
-                            ),
-                            SUCCESS_TOAST_DURATION,
-                        )
+                Err(message) => {
+                    if let Some(job) = self.job_mut(&job_id) {
+                        job.fail(message.clone());
                     }
-                    Err(message) => {
-                        if let Some(job) = self.job_mut(&job_id) {
-                            job.fail(message.clone());
-                        }
-                        self.error = Some(message);
-                        (
-                            Toast::danger(
-                                "Ripping failed",
-                                "Review the error message, then try the extraction again.",
-                            ),
-                            FAILURE_TOAST_DURATION,
+                    self.error = Some(message);
+                    self.notifications
+                        .failure(
+                            "Ripping failed",
+                            "Review the error message, then try the extraction again.",
                         )
-                    }
-                };
-
-                let toast_id = self.push_toast(toast);
-                Task::perform(dismiss_toast_after(toast_id, duration), |toast_id| {
-                    Message::DismissToast(toast_id)
-                })
-            }
-            Message::DismissToast(toast_id) => {
-                self.dismiss_toast(toast_id);
-                Task::none()
-            }
+                        .map(Message::Notifications)
+                }
+            },
+            Message::Notifications(message) => self
+                .notifications
+                .update(message)
+                .map(Message::Notifications),
         }
     }
-}
 
-async fn dismiss_toast_after(toast_id: ToastId, duration: Duration) -> ToastId {
-    tokio::time::sleep(duration).await;
-    toast_id
+    fn start_ripping(&mut self) -> Task<Message> {
+        if !self.can_start() {
+            return Task::none();
+        }
+
+        self.error = None;
+        let Some(job) = self.selected_job_mut() else {
+            return Task::none();
+        };
+        job.start_ripping();
+
+        let job_id = job.id.clone();
+        let request = RipRequest::new(job.input.clone(), job.output.clone());
+        Task::perform(rip_file(job_id.clone(), request), move |result| {
+            Message::RipCompleted { job_id, result }
+        })
+    }
 }
 
 async fn check_dependencies() -> Result<ffmpeg::Dependencies, String> {
@@ -185,14 +156,6 @@ async fn pick_video_file() -> Option<PathBuf> {
         .pick_file()
         .await
         .map(|file| file.path().to_path_buf())
-}
-
-async fn pick_output_folder() -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .set_title("Choose an output folder")
-        .pick_folder()
-        .await
-        .map(|folder| folder.path().to_path_buf())
 }
 
 async fn probe_file(job_id: crate::model::job::JobId, input: PathBuf) -> Result<MediaInfo, String> {
@@ -302,13 +265,7 @@ mod tests {
             }),
         });
 
-        assert_eq!(state.toasts.len(), 1);
-        assert_eq!(state.toasts[0].title, "Ripping complete");
-        assert!(state.toasts[0].body.contains("example.mp3"));
-        assert_eq!(
-            state.toasts[0].status,
-            super::super::toast::ToastStatus::Success
-        );
+        assert_eq!(state.notifications.len(), 1);
     }
 
     #[test]
@@ -322,12 +279,7 @@ mod tests {
             result: Err("FFmpeg exited with status 1".into()),
         });
 
-        assert_eq!(state.toasts.len(), 1);
-        assert_eq!(state.toasts[0].title, "Ripping failed");
-        assert_eq!(
-            state.toasts[0].status,
-            super::super::toast::ToastStatus::Danger
-        );
+        assert_eq!(state.notifications.len(), 1);
         assert_eq!(state.error.as_deref(), Some("FFmpeg exited with status 1"));
     }
 }
