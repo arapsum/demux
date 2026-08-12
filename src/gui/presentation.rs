@@ -84,9 +84,7 @@ impl From<&JobStatus> for StatusPresentation {
 pub(crate) struct JobPresentation {
     pub(crate) id: JobId,
     pub(crate) filename: String,
-    pub(crate) input: String,
     pub(crate) duration: String,
-    pub(crate) audio_details: String,
     pub(crate) output_details: &'static str,
     pub(crate) size: String,
     pub(crate) status: StatusPresentation,
@@ -105,38 +103,11 @@ impl From<&RipJob> for JobPresentation {
             .as_ref()
             .map(|metadata| format_duration(metadata.duration))
             .unwrap_or_else(|| "—".into());
-        let audio_details = job.metadata.as_ref().map_or_else(
-            || match &job.status {
-                JobStatus::Failed(message) | JobStatus::Skipped(message) => message.clone(),
-                _ => "Inspecting media details".to_owned(),
-            },
-            |metadata| {
-                let sample_rate = metadata
-                    .audio
-                    .sample_rate
-                    .map_or_else(|| "Unknown rate".into(), |rate| format!("{rate} Hz"));
-                let channels = metadata.audio.channels.map_or_else(
-                    || "Unknown channels".into(),
-                    |channels| {
-                        format!("{channels} channel{}", if channels == 1 { "" } else { "s" })
-                    },
-                );
-                format!(
-                    "{} · {} · {} · {}",
-                    metadata.container,
-                    metadata.audio.codec.to_uppercase(),
-                    sample_rate,
-                    channels,
-                )
-            },
-        );
         Self {
             id: job.id.clone(),
             filename,
-            input: job.input.clone(),
             duration,
-            audio_details,
-            output_details: "MP3 · 192 kbps",
+            output_details: "MP3 (192 kbps)",
             size: job.input_size.map_or_else(|| "—".into(), format_size),
             status: StatusPresentation::from(&job.status),
             terminal_detail: match &job.status {
@@ -160,7 +131,7 @@ fn format_duration(duration: std::time::Duration) -> String {
     }
 }
 
-fn format_size(bytes: u64) -> String {
+pub(crate) fn format_size(bytes: u64) -> String {
     const MIB: f64 = 1_048_576.0;
     const GIB: f64 = 1_073_741_824.0;
     if bytes >= 1_073_741_824 {
@@ -208,10 +179,7 @@ mod tests {
 
         assert_eq!(presentation.filename, "example.mp4");
         assert_eq!(presentation.duration, "01:01:01");
-        assert_eq!(
-            presentation.audio_details,
-            "mp4 · AAC · 48000 Hz · 2 channels"
-        );
+        assert_eq!(presentation.output_details, "MP3 (192 kbps)");
         assert_eq!(presentation.status.label, "Ready");
     }
 }

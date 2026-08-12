@@ -41,14 +41,20 @@ pub(crate) fn inset_panel(_theme: &Theme) -> container::Style {
         })
 }
 
-pub(crate) fn selected_row(_theme: &Theme) -> container::Style {
+pub(crate) fn queue_header(_theme: &Theme) -> container::Style {
+    container::Style::default().background(Color::from_rgb(0.075, 0.08, 0.098))
+}
+
+pub(crate) fn queue_row(_theme: &Theme) -> container::Style {
     container::Style::default()
-        .background(Color::from_rgb(0.075, 0.08, 0.10))
-        .border(Border {
-            color: Color::from_rgb(0.30, 0.27, 0.55),
-            width: 1.0,
-            radius: 12.0.into(),
-        })
+}
+
+pub(crate) fn selected_queue_row(_theme: &Theme) -> container::Style {
+    container::Style::default().background(Color::from_rgb(0.105, 0.10, 0.16))
+}
+
+pub(crate) fn queue_footer(_theme: &Theme) -> container::Style {
+    container::Style::default().background(Color::from_rgb(0.075, 0.08, 0.098))
 }
 
 pub(crate) fn accent_tile(_theme: &Theme) -> container::Style {
@@ -142,6 +148,22 @@ pub(crate) fn destructive_action(_theme: &Theme, status: button::Status) -> butt
     };
 
     action_button(background, text_color, border_color)
+}
+
+pub(crate) fn queue_row_action(_theme: &Theme, status: button::Status) -> button::Style {
+    let background = match status {
+        button::Status::Hovered => Some(Background::Color(Color::from_rgb(0.105, 0.11, 0.135))),
+        button::Status::Pressed => Some(Background::Color(Color::from_rgb(0.075, 0.08, 0.098))),
+        button::Status::Active | button::Status::Disabled => None,
+    };
+
+    button::Style {
+        background,
+        text_color: BUTTON_TEXT,
+        border: Border::default(),
+        shadow: Shadow::default(),
+        snap: true,
+    }
 }
 
 fn action_button(background: Color, text_color: Color, border_color: Color) -> button::Style {

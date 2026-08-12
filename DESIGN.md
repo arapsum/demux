@@ -151,11 +151,14 @@ during or after extraction are disabled.
 
 ### Job Row
 
-Each queued job shows filename, source path, textual status, duration,
-container, codec, sample rate, channels, source size, and fixed MP3 output.
-The active selection receives the violet-neutral selected border while other
-rows remain inset neutral surfaces. Unknown probe values say “Unknown”; they
-never fall back to zero. A failed row carries its own actionable probe error.
+The queue is one compact data table rather than a stack of nested cards. Its
+columns show position, filename, duration, textual status, fixed MP3 output,
+and source size. Rows share quiet horizontal separators so values remain easy
+to compare down each column. The active selection receives a restrained
+violet-neutral background, and a failed row carries its actionable process
+error beneath the filename. Unknown probe values use an em dash; they never
+fall back to zero. The footer reports the number of jobs and total source size
+without presenting it as an estimated output size.
 
 ### Queue Execution
 

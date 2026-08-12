@@ -18,10 +18,11 @@ use crate::{
 
 use super::{
     drop_zone, icon,
-    presentation::JobPresentation,
+    presentation::{JobPresentation, format_size},
     style::{
         BUTTON_TEXT, DANGER, DANGER_TEXT, ICON_MUTED, TEXT_MUTED, destructive_action, error_panel,
-        inset_panel, panel, primary_action, secondary_action, selected_row,
+        panel, primary_action, queue_footer, queue_header, queue_row, queue_row_action,
+        secondary_action, selected_queue_row,
     },
 };
 
@@ -623,21 +624,35 @@ impl Queue {
     }
 
     fn queue_panel(&self) -> Element<'_, Message> {
-        let heading = row![
-            text("Queue").size(17).font(Font {
-                weight: Weight::Semibold,
-                ..Font::default()
-            }),
-            space::horizontal(),
-            text(match self.jobs.len() {
-                0 => "No files".into(),
-                1 => "1 file".into(),
-                count => format!("{count} files"),
-            })
-            .size(13)
-            .color(TEXT_MUTED),
-        ]
-        .align_y(iced::Alignment::Center);
+        let header = container(
+            row![
+                text("#").size(12).color(TEXT_MUTED).width(34),
+                text("File Name")
+                    .size(12)
+                    .color(TEXT_MUTED)
+                    .width(FillPortion(7)),
+                text("Duration")
+                    .size(12)
+                    .color(TEXT_MUTED)
+                    .width(FillPortion(2)),
+                text("Status")
+                    .size(12)
+                    .color(TEXT_MUTED)
+                    .width(FillPortion(3)),
+                text("Output Format")
+                    .size(12)
+                    .color(TEXT_MUTED)
+                    .width(FillPortion(3)),
+                text("Size")
+                    .size(12)
+                    .color(TEXT_MUTED)
+                    .width(FillPortion(2)),
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Fill)
+        .padding(Padding::from([10, 12]))
+        .style(queue_header);
 
         let queue: Element<'_, Message> = if self.jobs.is_empty() {
             container(
@@ -660,15 +675,16 @@ impl Queue {
             .center_y(180)
             .into()
         } else {
-            let mut jobs = self.jobs.iter().take(self.visible_jobs).fold(
-                column![].spacing(8),
-                |column, job| {
+            let mut jobs = self.jobs.iter().take(self.visible_jobs).enumerate().fold(
+                column![],
+                |column, (index, job)| {
                     let run_progress = self.runner.as_ref().and_then(|runner| {
                         (runner.active() == Some(&job.id))
                             .then(|| (runner.position().unwrap_or(1), runner.total()))
                     });
                     column.push(job_row(
                         job,
+                        index + 1,
                         self.selected_job.as_ref() == Some(&job.id),
                         run_progress,
                     ))
@@ -688,17 +704,52 @@ impl Queue {
             jobs.into()
         };
 
-        container(column![heading, rule::horizontal(1), scrollable(queue)].spacing(12))
-            .width(Fill)
-            .height(Fill)
-            .padding(18)
-            .style(panel)
-            .into()
+        let source_bytes = self
+            .jobs
+            .iter()
+            .filter_map(|job| job.input_size)
+            .fold(0_u64, u64::saturating_add);
+        let footer = container(
+            row![
+                text(format!(
+                    "{} file{} in queue",
+                    self.jobs.len(),
+                    if self.jobs.len() == 1 { "" } else { "s" }
+                ))
+                .size(12)
+                .color(TEXT_MUTED),
+                space::horizontal(),
+                text(if self.jobs.is_empty() {
+                    String::new()
+                } else {
+                    format!("Total source size: {}", format_size(source_bytes))
+                })
+                .size(12)
+                .color(TEXT_MUTED),
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Fill)
+        .padding(Padding::from([8, 12]))
+        .style(queue_footer);
+
+        container(column![
+            header,
+            rule::horizontal(1),
+            scrollable(queue),
+            rule::horizontal(1),
+            footer
+        ])
+        .width(Fill)
+        .height(Fill)
+        .style(panel)
+        .into()
     }
 }
 
 fn job_row(
     job: &RipJob,
+    index: usize,
     selected: bool,
     run_progress: Option<(usize, usize)>,
 ) -> Element<'_, Message> {
@@ -709,75 +760,64 @@ fn job_row(
         |(position, total)| format!("Ripping ({position} of {total})"),
     );
 
-    let terminal_detail: Element<'_, Message> = job.terminal_detail.as_ref().map_or_else(
-        || space::vertical().height(0).into(),
-        |detail| text(detail.clone()).size(12).color(DANGER_TEXT).into(),
-    );
+    let filename: Element<'_, Message> = if let Some(detail) = job.terminal_detail {
+        column![
+            text(job.filename).size(13).font(Font {
+                weight: Weight::Semibold,
+                ..Font::default()
+            }),
+            text(detail).size(11).color(DANGER_TEXT),
+        ]
+        .spacing(3)
+        .into()
+    } else {
+        text(job.filename)
+            .size(13)
+            .font(Font {
+                weight: Weight::Semibold,
+                ..Font::default()
+            })
+            .into()
+    };
 
     let row = container(
-        column![
-            row![
-                column![
-                    text(job.filename).size(16).font(Font {
-                        weight: Weight::Semibold,
-                        ..Font::default()
-                    }),
-                    text(job.input).size(12).color(TEXT_MUTED),
-                ]
-                .spacing(4)
-                .width(Fill),
-                text(status_label)
-                    .size(13)
-                    .font(Font {
-                        weight: Weight::Semibold,
-                        ..Font::default()
-                    })
-                    .color(job.status.color),
-                text(if selected { "Selected" } else { "" })
-                    .size(12)
-                    .color(TEXT_MUTED),
-            ]
-            .spacing(14)
-            .align_y(iced::Alignment::Start),
-            rule::horizontal(1),
-            row![
-                column![
-                    text("Duration").size(12).color(TEXT_MUTED),
-                    text(job.duration)
-                ]
-                .spacing(4)
-                .width(FillPortion(1)),
-                column![
-                    text("Audio stream").size(12).color(TEXT_MUTED),
-                    text(job.audio_details)
-                ]
-                .spacing(4)
-                .width(FillPortion(2)),
-                column![
-                    text("Output").size(12).color(TEXT_MUTED),
-                    text(job.output_details)
-                ]
-                .spacing(4)
-                .width(FillPortion(1)),
-                column![text("Size").size(12).color(TEXT_MUTED), text(job.size)]
-                    .spacing(4)
-                    .width(FillPortion(1)),
-            ]
-            .spacing(18),
-            terminal_detail,
+        row![
+            text(index).size(12).color(TEXT_MUTED).width(34),
+            row![icon::queue_media(ICON_MUTED), filename]
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .width(FillPortion(7)),
+            text(job.duration).size(12).width(FillPortion(2)),
+            text(status_label)
+                .size(12)
+                .font(Font {
+                    weight: Weight::Semibold,
+                    ..Font::default()
+                })
+                .color(job.status.color)
+                .width(FillPortion(3)),
+            text(job.output_details).size(12).width(FillPortion(3)),
+            text(job.size).size(12).width(FillPortion(2)),
         ]
-        .spacing(14),
+        .align_y(iced::Alignment::Center),
     )
     .width(Fill)
-    .padding(18)
-    .style(if selected { selected_row } else { inset_panel });
+    .padding(Padding::from([10, 12]))
+    .style(if selected {
+        selected_queue_row
+    } else {
+        queue_row
+    });
 
-    button(row)
-        .padding(0)
-        .width(Fill)
-        .style(button::text)
-        .on_press(Message::Select(id))
-        .into()
+    column![
+        button(row)
+            .padding(0)
+            .width(Fill)
+            .style(queue_row_action)
+            .on_press(Message::Select(id)),
+        rule::horizontal(1),
+    ]
+    .into()
 }
 
 async fn wait_for_drop_batch(batch: u64) -> u64 {

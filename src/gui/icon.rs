@@ -17,3 +17,7 @@ pub(crate) fn remove(color: Color) -> Text<'static, Theme> {
 pub(crate) fn media_file(color: Color) -> Text<'static, Theme> {
     icon_file_video_2().size(42).color(color)
 }
+
+pub(crate) fn queue_media(color: Color) -> Text<'static, Theme> {
+    icon_file_video_2().size(18).color(color)
+}
