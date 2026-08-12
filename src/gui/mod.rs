@@ -28,7 +28,7 @@ mod toast;
 mod update;
 mod view;
 
-use iced::{Color, Size, Theme, theme::Palette, window};
+use iced::{Color, Size, Subscription, Theme, event, theme::Palette, window};
 
 pub use self::{message::Message, state::Demux};
 
@@ -36,12 +36,22 @@ pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)
         .title("Demux")
         .theme(app_theme)
+        .subscription(subscription)
         .window(window::Settings {
             size: Size::new(1_180.0, 760.0),
             min_size: Some(Size::new(860.0, 600.0)),
             ..window::Settings::default()
         })
         .run()
+}
+
+fn subscription(_state: &Demux) -> Subscription<Message> {
+    event::listen_with(|event, _, _| match event {
+        iced::Event::Window(window::Event::FileDropped(path)) => {
+            Some(Message::Queue(queue::Message::PathsDropped(vec![path])))
+        }
+        _ => None,
+    })
 }
 
 fn theme() -> Theme {

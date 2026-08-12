@@ -6,6 +6,7 @@ pub(crate) const ACCENT: Color = Color::from_rgb(0.43, 0.36, 0.96);
 pub(crate) const SUCCESS: Color = Color::from_rgb(0.35, 0.78, 0.57);
 pub(crate) const WARNING: Color = Color::from_rgb(0.96, 0.68, 0.30);
 pub(crate) const DANGER: Color = Color::from_rgb(0.94, 0.39, 0.42);
+pub(crate) const DANGER_TEXT: Color = Color::from_rgb(0.95, 0.76, 0.77);
 
 pub(crate) fn app_background(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.055, 0.06, 0.075))

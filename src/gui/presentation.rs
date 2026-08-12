@@ -4,7 +4,7 @@ use iced::Color;
 
 use crate::{
     ffmpeg::DependencyState,
-    model::job::{JobStatus, RipJob},
+    model::job::{JobId, JobStatus, RipJob},
 };
 
 use super::style::{ACCENT, DANGER, SUCCESS, TEXT_MUTED, WARNING};
@@ -74,11 +74,13 @@ impl From<&JobStatus> for StatusPresentation {
 }
 
 pub(crate) struct JobPresentation {
+    pub(crate) id: JobId,
     pub(crate) filename: String,
     pub(crate) input: String,
     pub(crate) duration: String,
     pub(crate) audio_details: String,
     pub(crate) output_details: &'static str,
+    pub(crate) size: String,
     pub(crate) status: StatusPresentation,
 }
 
@@ -95,7 +97,10 @@ impl From<&RipJob> for JobPresentation {
             .map(|metadata| format_duration(metadata.duration))
             .unwrap_or_else(|| "—".into());
         let audio_details = job.metadata.as_ref().map_or_else(
-            || "Inspecting media details".to_owned(),
+            || match &job.status {
+                JobStatus::Failed(message) => message.clone(),
+                _ => "Inspecting media details".to_owned(),
+            },
             |metadata| {
                 let sample_rate = metadata
                     .audio
@@ -118,11 +123,13 @@ impl From<&RipJob> for JobPresentation {
         );
 
         Self {
+            id: job.id.clone(),
             filename,
             input: job.input.clone(),
             duration,
             audio_details,
             output_details: "MP3 · 192 kbps",
+            size: job.input_size.map_or_else(|| "—".into(), format_size),
             status: StatusPresentation::from(&job.status),
         }
     }
@@ -138,6 +145,16 @@ fn format_duration(duration: std::time::Duration) -> String {
         format!("{hours:02}:{minutes:02}:{seconds:02}")
     } else {
         format!("{minutes:02}:{seconds:02}")
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    const MIB: f64 = 1_048_576.0;
+    const GIB: f64 = 1_073_741_824.0;
+    if bytes >= 1_073_741_824 {
+        format!("{:.2} GB", bytes as f64 / GIB)
+    } else {
+        format!("{:.1} MB", bytes as f64 / MIB)
     }
 }
 

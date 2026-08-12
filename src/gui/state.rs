@@ -27,11 +27,9 @@ impl Default for Demux {
 
 impl Demux {
     pub(crate) fn refresh_output_path(&mut self) {
-        let Some(input) = self.queue.selected_input().map(ToOwned::to_owned) else {
-            return;
-        };
+        let settings = &self.output_settings;
         self.queue
-            .set_selected_output(self.output_settings.output_path(&input));
+            .set_output_paths(|input| settings.output_path(input));
     }
 
     pub(crate) fn can_start(&self) -> bool {

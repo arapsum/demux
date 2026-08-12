@@ -63,14 +63,28 @@ impl Demux {
                 self.error = None;
                 local_task
             }
-            queue::Action::FileSelected(input) => {
+            queue::Action::IntakeRequested(paths) => {
                 self.error = None;
-                self.output_settings.set_default_from_input(&input);
-                let output = self.output_settings.output_path(&input);
-                let action = self.queue.enqueue(input, output);
+                let existing = self.queue.canonical_paths();
+                Task::perform(crate::app::intake::discover(paths, existing), |result| {
+                    Message::Queue(queue::Message::IntakeCompleted(result))
+                })
+            }
+            queue::Action::IntakeAccepted(inputs) => {
+                if let Some(input) = inputs.first() {
+                    self.output_settings.set_default_from_input(&input.path);
+                }
+                let paths = inputs
+                    .into_iter()
+                    .map(|input| {
+                        let output = self.output_settings.output_path(&input.path);
+                        (input, output)
+                    })
+                    .collect();
+                let action = self.queue.enqueue_many(paths);
                 self.handle_queue_action(action)
             }
-            queue::Action::ProbeRequested { .. }
+            queue::Action::ProbeRequested(_)
             | queue::Action::RipRequested { .. }
             | queue::Action::RipCompleted { .. }
             | queue::Action::RipFailed(_) => self.handle_queue_action(action),
@@ -83,10 +97,15 @@ impl Demux {
 
     fn handle_queue_action(&mut self, action: queue::Action) -> Task<Message> {
         match action {
-            queue::Action::ProbeRequested { job_id, input } => {
-                Task::perform(runtime::probe(job_id.clone(), input), move |result| {
-                    Message::Queue(queue::Message::ProbeCompleted { job_id, result })
-                })
+            queue::Action::ProbeRequested(requests) => {
+                Task::batch(requests.into_iter().map(|(job_id, input)| {
+                    Task::perform(
+                        runtime::probe_bounded(job_id.clone(), input),
+                        move |result| {
+                            Message::Queue(queue::Message::ProbeCompleted { job_id, result })
+                        },
+                    )
+                }))
             }
             queue::Action::RipRequested { job_id, request } => {
                 if !matches!(self.dependency_state, DependencyState::Ready(_))
@@ -123,7 +142,8 @@ impl Demux {
             }
             queue::Action::None
             | queue::Action::FilePickerOpened
-            | queue::Action::FileSelected(_)
+            | queue::Action::IntakeRequested(_)
+            | queue::Action::IntakeAccepted(_)
             | queue::Action::ProbeFailed(_) => Task::none(),
         }
     }
@@ -163,7 +183,13 @@ mod tests {
         let input = PathBuf::from(input);
         state.output_settings.set_default_from_input(&input);
         let output = state.output_settings.output_path(&input);
-        let _ = state.queue.enqueue(input, output);
+        let _ = state.queue.enqueue_many(vec![(
+            crate::app::intake::AcceptedInput {
+                path: input,
+                size: 42,
+            },
+            output,
+        )]);
         state.queue.selected().unwrap().id.clone()
     }
 
@@ -250,9 +276,15 @@ mod tests {
     fn selected_file_action_wires_output_settings_into_the_queue() {
         let mut state = Demux::default();
 
-        let _ = state.update(Message::Queue(queue::Message::FileSelected(Some(
-            PathBuf::from("/videos/example.mp4"),
-        ))));
+        let _ = state.update(Message::Queue(queue::Message::IntakeCompleted(
+            crate::app::intake::IntakeResult {
+                accepted: vec![crate::app::intake::AcceptedInput {
+                    path: PathBuf::from("/videos/example.mp4"),
+                    size: 42,
+                }],
+                rejected: Vec::new(),
+            },
+        )));
 
         let job = state.queue.selected().unwrap();
         assert_eq!(job.input, "/videos/example.mp4");
