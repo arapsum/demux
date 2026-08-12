@@ -64,15 +64,14 @@ This separation keeps process management out of the view layer and makes the FFm
 The GUI follows a composed-state architecture. `Demux` is the composition root,
 while each independent surface owns its state, local messages, initialization,
 update logic, and view. The root maps child tasks and translates explicit child
-actions when a workflow crosses surface boundaries. Output settings and
-notifications use this structure today; the queue/job surface is the next
-candidate for extraction.
+actions when a workflow crosses surface boundaries. Queue, output settings,
+and notifications use this structure today.
 
 ```text
 Demux
+  ├── Queue            → file intake, probing, selection, and job presentation
   ├── OutputSettings  → folder selection and Start action
-  ├── Notifications   → toast lifecycle and overlay
-  └── queue/job state → next extraction target
+  └── Notifications   → toast lifecycle and overlay
 ```
 
 ## Requirements
