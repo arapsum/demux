@@ -10,6 +10,8 @@ use thiserror::Error;
 ///   not be detected or run.
 /// - [`Io`](Self::Io): The operating system could not start or communicate
 ///   with the command process.
+/// - [`ProcessFailed`](Self::ProcessFailed): `FFmpeg` ran but returned an
+///   unsuccessful exit status.
 #[derive(Debug, Error)]
 pub enum FFmpegError {
     /// Wraps a failure while detecting or running a required dependency.
@@ -18,6 +20,10 @@ pub enum FFmpegError {
     /// Wraps an I/O failure from the operating system.
     #[error(transparent)]
     Io(#[from] io::Error),
+    /// Captures diagnostic output from an `FFmpeg` process that exited
+    /// unsuccessfully.
+    #[error("ffmpeg exited with {status}: {stderr}")]
+    ProcessFailed { status: ExitStatus, stderr: String },
 }
 
 pub type FFmpegResult<T> = std::result::Result<T, FFmpegError>;

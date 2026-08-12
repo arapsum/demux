@@ -3,6 +3,6 @@ mod error;
 mod output;
 
 pub use self::{
-    command::{metadata, probe},
+    command::{inspect, metadata, probe},
     error::{ProbeError, ProbeResult},
 };

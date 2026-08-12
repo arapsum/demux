@@ -71,3 +71,12 @@ pub fn metadata(output: &Output) -> ProbeResult<MediaInfo> {
 
     MediaInfo::try_from(probe)
 }
+
+/// Inspects a media file and returns domain metadata in one operation.
+///
+/// This is the application-facing probing API; raw process output and JSON
+/// conversion remain internal details of the adapter.
+pub async fn inspect(input: &str) -> ProbeResult<MediaInfo> {
+    let output = probe(input).await?;
+    metadata(&output)
+}

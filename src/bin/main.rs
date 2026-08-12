@@ -1,7 +1,7 @@
-use demux::{App, Result};
+use demux::{App, Result, app::Cli};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut app = App::new();
-    app.run().await
+    Cli::new().run(&mut app).await
 }
