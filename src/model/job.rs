@@ -84,6 +84,17 @@ impl RipJob {
         self.status = JobStatus::Ripping;
     }
 
+    pub(crate) fn record_progress(
+        &mut self,
+        elapsed: Option<Duration>,
+        speed: Option<f64>,
+        bitrate_kbps: Option<f64>,
+        output_size: Option<u64>,
+    ) {
+        self.progress
+            .update(elapsed, speed, bitrate_kbps, output_size);
+    }
+
     pub(crate) fn queue(&mut self) {
         self.status = JobStatus::Queued;
     }
@@ -93,6 +104,7 @@ impl RipJob {
     }
 
     pub(crate) fn complete(&mut self) {
+        self.progress.finish();
         self.status = JobStatus::Completed;
     }
 
@@ -112,12 +124,18 @@ impl RipJob {
 /// - `duration`: Total media duration when it is known.
 /// - `percent`: Completion percentage in the inclusive range from 0 to 100.
 /// - `speed`: Processing speed relative to real time, when reported.
+/// - `bitrate_kbps`: Current encoded bitrate, when reported.
+/// - `output_size`: Current output size in bytes, when reported.
+/// - `remaining`: Estimated wall-clock time remaining, when calculable.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RipProgress {
     pub elapsed: Duration,
     pub duration: Duration,
     pub percent: f64,
     pub speed: Option<f64>,
+    pub bitrate_kbps: Option<f64>,
+    pub output_size: Option<u64>,
+    pub remaining: Option<Duration>,
 }
 
 impl Default for RipProgress {
@@ -127,7 +145,55 @@ impl Default for RipProgress {
             duration: Duration::ZERO,
             percent: 0.0,
             speed: None,
+            bitrate_kbps: None,
+            output_size: None,
+            remaining: None,
         }
+    }
+}
+
+impl RipProgress {
+    pub(crate) fn update(
+        &mut self,
+        elapsed: Option<Duration>,
+        speed: Option<f64>,
+        bitrate_kbps: Option<f64>,
+        output_size: Option<u64>,
+    ) {
+        if let Some(elapsed) = elapsed {
+            self.elapsed = self.elapsed.max(elapsed);
+        }
+        if speed.is_some_and(|speed| speed.is_finite() && speed > 0.0) {
+            self.speed = speed;
+        }
+        if bitrate_kbps.is_some_and(|bitrate| bitrate.is_finite() && bitrate >= 0.0) {
+            self.bitrate_kbps = bitrate_kbps;
+        }
+        if let Some(output_size) = output_size {
+            self.output_size = Some(
+                self.output_size
+                    .map_or(output_size, |size| size.max(output_size)),
+            );
+        }
+
+        if !self.duration.is_zero() {
+            let measured = self.elapsed.as_secs_f64() / self.duration.as_secs_f64() * 100.0;
+            self.percent = self.percent.max(measured.clamp(0.0, 100.0));
+        }
+
+        self.remaining = self.speed.and_then(|speed| {
+            let remaining = self.duration.saturating_sub(self.elapsed);
+            (!self.duration.is_zero())
+                .then(|| Duration::from_secs_f64(remaining.as_secs_f64() / speed))
+        });
+    }
+
+    pub(crate) fn finish(&mut self) {
+        if !self.duration.is_zero() {
+            self.elapsed = self.duration;
+        }
+        self.percent = 100.0;
+        self.remaining = Some(Duration::ZERO);
     }
 }
 
@@ -194,6 +260,7 @@ mod tests {
 
         job.complete();
         assert_eq!(job.status, JobStatus::Completed);
+        assert_eq!(job.progress.percent, 100.0);
     }
 
     #[test]
@@ -220,5 +287,27 @@ mod tests {
             skipped.status,
             JobStatus::Skipped("No audio stream was found".into())
         );
+    }
+
+    #[test]
+    fn progress_is_monotonic_and_estimates_remaining_time() {
+        let mut job = RipJob::new(JobId::new(1), "input.mp4".into(), "output.mp3".into());
+        job.record_metadata(media_info());
+        job.start_ripping();
+
+        job.record_progress(
+            Some(Duration::from_secs(30)),
+            Some(2.0),
+            Some(192.0),
+            Some(1_024),
+        );
+        job.record_progress(Some(Duration::from_secs(20)), None, None, Some(512));
+
+        assert_eq!(job.progress.elapsed, Duration::from_secs(30));
+        assert!((job.progress.percent - 100.0 / 3.0).abs() < 1e-10);
+        assert_eq!(job.progress.speed, Some(2.0));
+        assert_eq!(job.progress.bitrate_kbps, Some(192.0));
+        assert_eq!(job.progress.output_size, Some(1_024));
+        assert_eq!(job.progress.remaining, Some(Duration::from_secs(30)));
     }
 }

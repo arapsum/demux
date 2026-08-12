@@ -5,7 +5,10 @@ use tracing::{Instrument, info_span};
 use crate::{
     Error, Result,
     app::output,
-    ffmpeg::{self, Dependencies, FfmpegAudioRipper, RipOutcome, RipRequest, TokioProcessRunner},
+    ffmpeg::{
+        self, Dependencies, FfmpegAudioRipper, FfmpegProgress, RipOutcome, RipRequest,
+        TokioProcessRunner,
+    },
     ffprobe,
     model::{job::JobId, media::MediaInfo},
 };
@@ -42,6 +45,22 @@ pub async fn rip(job_id: JobId, request: RipRequest) -> Result<RipOutcome> {
     async move {
         Ok(FfmpegAudioRipper::<TokioProcessRunner>::default()
             .rip(&request)
+            .await?)
+    }
+    .instrument(span)
+    .await
+}
+
+/// Extracts one audio file and forwards bounded machine-readable progress.
+pub async fn rip_with_progress(
+    job_id: JobId,
+    request: RipRequest,
+    progress: tokio::sync::mpsc::Sender<FfmpegProgress>,
+) -> Result<RipOutcome> {
+    let span = info_span!("audio_rip_progress_job", job_id = job_id.0);
+    async move {
+        Ok(FfmpegAudioRipper::<TokioProcessRunner>::default()
+            .rip_with_progress(&request, progress)
             .await?)
     }
     .instrument(span)
