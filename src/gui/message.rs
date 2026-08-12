@@ -1,21 +1,14 @@
-use std::path::PathBuf;
-
 use crate::{
     ffmpeg::{Dependencies, RipOutcome},
-    model::{job::JobId, media::MediaInfo},
+    model::job::JobId,
 };
 
-use super::{output_settings, toast};
+use super::{output_settings, queue, toast};
 
 #[derive(Debug, Clone)]
 pub enum Message {
     DependenciesChecked(Result<Dependencies, String>),
-    AddFile,
-    FileSelected(Option<PathBuf>),
-    ProbeCompleted {
-        job_id: JobId,
-        result: Result<MediaInfo, String>,
-    },
+    Queue(queue::Message),
     OutputSettings(output_settings::Message),
     RipCompleted {
         job_id: JobId,

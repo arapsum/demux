@@ -6,7 +6,10 @@ use iced::{Element, Fill, FillPortion, Font, Padding, Task};
 
 use crate::{ffmpeg::DependencyState, model::job::JobStatus};
 
-use super::style::{DANGER, SUCCESS, TEXT_MUTED, WARNING, inset_panel, panel};
+use super::{
+    presentation::{DependencyPresentation, StatusPresentation},
+    style::{TEXT_MUTED, inset_panel, panel},
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -90,15 +93,11 @@ impl OutputSettings {
         job_status: Option<&JobStatus>,
         can_start: bool,
     ) -> Element<'a, Message> {
-        let dependencies = match dependency_state {
-            DependencyState::Checking => ("Checking FFmpeg…", WARNING),
-            DependencyState::Ready(_) => ("FFmpeg ready", SUCCESS),
-            DependencyState::Missing { .. } | DependencyState::Failed { .. } => {
-                ("FFmpeg unavailable", DANGER)
-            }
-        };
+        let dependencies = DependencyPresentation::from(dependency_state);
         let output_locked = matches!(job_status, Some(JobStatus::Ripping | JobStatus::Completed));
-        let selected_status = job_status.map(status_label).unwrap_or("Waiting for a file");
+        let selected_status = job_status
+            .map(StatusPresentation::from)
+            .map_or("Waiting for a file", |status| status.label);
 
         let output_input = text_input("Choose an output folder", &self.folder)
             .padding(12)
@@ -153,7 +152,7 @@ impl OutputSettings {
                             weight: Weight::Semibold,
                             ..Font::default()
                         }),
-                        text(dependencies.0).size(13).color(dependencies.1),
+                        text(dependencies.label).size(13).color(dependencies.color),
                     ]
                     .spacing(6),
                 )
@@ -177,18 +176,6 @@ impl OutputSettings {
         .padding(20)
         .style(panel)
         .into()
-    }
-}
-
-fn status_label(status: &JobStatus) -> &'static str {
-    match status {
-        JobStatus::Pending => "Pending",
-        JobStatus::Probing => "Probing…",
-        JobStatus::Ready => "Ready",
-        JobStatus::Ripping => "Ripping…",
-        JobStatus::Completed => "Completed",
-        JobStatus::Failed(_) => "Failed",
-        JobStatus::Cancelled => "Cancelled",
     }
 }
 

@@ -4,8 +4,8 @@ use std::time::Duration;
 
 /// Identifies a single audio-ripping job.
 ///
-/// Job identifiers are assigned by [`App`](crate::App) in creation order and
-/// remain stable for the lifetime of a [`RipJob`].
+/// Job identifiers are assigned by the owning workflow or GUI queue in creation
+/// order and remain stable for the lifetime of a [`RipJob`].
 ///
 /// # Fields
 ///

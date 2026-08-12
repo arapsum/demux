@@ -20,6 +20,8 @@
 
 mod message;
 mod output_settings;
+mod presentation;
+mod queue;
 mod state;
 mod style;
 mod toast;

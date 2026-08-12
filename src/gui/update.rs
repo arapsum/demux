@@ -1,23 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use iced::Task;
-use tracing::{Instrument, info_span};
 
-use crate::{
-    ffmpeg::{
-        self, DependencyState, FfmpegAudioRipper, RipOutcome, RipRequest, TokioProcessRunner,
-    },
-    ffprobe,
-    model::media::MediaInfo,
-};
+use crate::{app::runtime, ffmpeg::DependencyState};
 
-use super::{message::Message, output_settings, state::Demux};
+use super::{message::Message, output_settings, queue, state::Demux};
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
         (
             Self::default(),
-            Task::perform(check_dependencies(), Message::DependenciesChecked),
+            Task::perform(runtime::check_dependencies(), Message::DependenciesChecked),
         )
     }
 
@@ -38,81 +31,21 @@ impl Demux {
                 }
                 Task::none()
             }
-            Message::AddFile => {
-                self.error = None;
-                self.picking_file = true;
-                Task::perform(pick_video_file(), Message::FileSelected)
-            }
-            Message::FileSelected(path) => {
-                self.picking_file = false;
-                let Some(path) = path else {
-                    return Task::none();
-                };
-
-                self.error = None;
-                let job_id = self.add_job(path.clone());
-                Task::perform(probe_file(job_id.clone(), path), move |result| {
-                    Message::ProbeCompleted { job_id, result }
-                })
-            }
-            Message::ProbeCompleted { job_id, result } => {
-                match result {
-                    Ok(metadata) => {
-                        if let Some(job) = self.job_mut(&job_id) {
-                            job.record_metadata(metadata);
-                        }
-                    }
-                    Err(message) => {
-                        if let Some(job) = self.job_mut(&job_id) {
-                            job.fail(message.clone());
-                        }
-                        self.error = Some(message);
-                    }
-                }
-                Task::none()
-            }
+            Message::Queue(message) => self.update_queue(message),
             Message::OutputSettings(message) => {
                 let (action, task) = self.output_settings.update(message);
                 match action {
                     output_settings::Action::None => {}
                     output_settings::Action::OutputChanged => self.refresh_output_path(),
-                    output_settings::Action::StartRipping => return self.start_ripping(),
+                    output_settings::Action::StartRipping => {
+                        return self.update_queue(queue::Message::StartSelected);
+                    }
                 }
                 task.map(Message::OutputSettings)
             }
-            Message::RipCompleted { job_id, result } => match result {
-                Ok(_) => {
-                    let output_name = self
-                        .jobs
-                        .iter()
-                        .find(|job| job.id == job_id)
-                        .and_then(|job| Path::new(&job.output).file_name())
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("Your MP3")
-                        .to_owned();
-                    if let Some(job) = self.job_mut(&job_id) {
-                        job.complete();
-                    }
-                    self.notifications
-                        .success(
-                            "Ripping complete",
-                            format!("{output_name} is ready in your output folder."),
-                        )
-                        .map(Message::Notifications)
-                }
-                Err(message) => {
-                    if let Some(job) = self.job_mut(&job_id) {
-                        job.fail(message.clone());
-                    }
-                    self.error = Some(message);
-                    self.notifications
-                        .failure(
-                            "Ripping failed",
-                            "Review the error message, then try the extraction again.",
-                        )
-                        .map(Message::Notifications)
-                }
-            },
+            Message::RipCompleted { job_id, result } => {
+                self.update_queue(queue::Message::RipCompleted { job_id, result })
+            }
             Message::Notifications(message) => self
                 .notifications
                 .update(message)
@@ -120,77 +53,89 @@ impl Demux {
         }
     }
 
-    fn start_ripping(&mut self) -> Task<Message> {
-        if !self.can_start() {
-            return Task::none();
+    fn update_queue(&mut self, message: queue::Message) -> Task<Message> {
+        let (action, task) = self.queue.update(message);
+        let local_task = task.map(Message::Queue);
+
+        match action {
+            queue::Action::None => local_task,
+            queue::Action::FilePickerOpened => {
+                self.error = None;
+                local_task
+            }
+            queue::Action::FileSelected(input) => {
+                self.error = None;
+                self.output_settings.set_default_from_input(&input);
+                let output = self.output_settings.output_path(&input);
+                let action = self.queue.enqueue(input, output);
+                self.handle_queue_action(action)
+            }
+            queue::Action::ProbeRequested { .. }
+            | queue::Action::RipRequested { .. }
+            | queue::Action::RipCompleted { .. }
+            | queue::Action::RipFailed(_) => self.handle_queue_action(action),
+            queue::Action::ProbeFailed(message) => {
+                self.error = Some(message);
+                local_task
+            }
         }
-
-        self.error = None;
-        let Some(job) = self.selected_job_mut() else {
-            return Task::none();
-        };
-        job.start_ripping();
-
-        let job_id = job.id.clone();
-        let request = RipRequest::new(job.input.clone(), job.output.clone());
-        Task::perform(rip_file(job_id.clone(), request), move |result| {
-            Message::RipCompleted { job_id, result }
-        })
     }
-}
 
-async fn check_dependencies() -> Result<ffmpeg::Dependencies, String> {
-    tokio::task::spawn_blocking(ffmpeg::detect_dependencies)
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())
-}
-
-async fn pick_video_file() -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .set_title("Choose a video to rip")
-        .add_filter(
-            "Video files",
-            &["mp4", "mkv", "mov", "avi", "wmv", "flv", "mpeg", "mpg"],
-        )
-        .pick_file()
-        .await
-        .map(|file| file.path().to_path_buf())
-}
-
-async fn probe_file(job_id: crate::model::job::JobId, input: PathBuf) -> Result<MediaInfo, String> {
-    let span = info_span!("gui_probe_job", job_id = job_id.0);
-    async move {
-        ffprobe::inspect(&input.to_string_lossy())
-            .await
-            .map_err(|error| error.to_string())
+    fn handle_queue_action(&mut self, action: queue::Action) -> Task<Message> {
+        match action {
+            queue::Action::ProbeRequested { job_id, input } => {
+                Task::perform(runtime::probe(job_id.clone(), input), move |result| {
+                    Message::Queue(queue::Message::ProbeCompleted { job_id, result })
+                })
+            }
+            queue::Action::RipRequested { job_id, request } => {
+                if !matches!(self.dependency_state, DependencyState::Ready(_))
+                    || !self.output_settings.has_folder()
+                {
+                    return Task::none();
+                }
+                self.error = None;
+                Task::perform(runtime::rip(job_id.clone(), request), move |result| {
+                    Message::RipCompleted { job_id, result }
+                })
+            }
+            queue::Action::RipCompleted { output } => {
+                let output_name = Path::new(&output)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Your MP3")
+                    .to_owned();
+                self.notifications
+                    .success(
+                        "Ripping complete",
+                        format!("{output_name} is ready in your output folder."),
+                    )
+                    .map(Message::Notifications)
+            }
+            queue::Action::RipFailed(message) => {
+                self.error = Some(message);
+                self.notifications
+                    .failure(
+                        "Ripping failed",
+                        "Review the error message, then try the extraction again.",
+                    )
+                    .map(Message::Notifications)
+            }
+            queue::Action::None
+            | queue::Action::FilePickerOpened
+            | queue::Action::FileSelected(_)
+            | queue::Action::ProbeFailed(_) => Task::none(),
+        }
     }
-    .instrument(span)
-    .await
-}
-
-async fn rip_file(
-    job_id: crate::model::job::JobId,
-    request: RipRequest,
-) -> Result<RipOutcome, String> {
-    let span = info_span!("gui_rip_job", job_id = job_id.0);
-    async move {
-        FfmpegAudioRipper::<TokioProcessRunner>::default()
-            .rip(&request)
-            .await
-            .map_err(|error| error.to_string())
-    }
-    .instrument(span)
-    .await
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{path::PathBuf, time::Duration};
 
     use crate::{
-        ffmpeg::Dependencies,
-        model::job::JobStatus,
+        ffmpeg::{Dependencies, RipOutcome},
+        model::job::{JobId, JobStatus},
         model::media::{AudioMetadata, MediaInfo},
     };
 
@@ -214,22 +159,40 @@ mod tests {
         }
     }
 
-    #[test]
-    fn probe_completion_makes_selected_job_ready() {
-        let mut state = Demux::default();
-        state.dependency_state = DependencyState::Ready(Dependencies {
-            ffmpeg_version: "ffmpeg test".into(),
-            ffprobe_version: "ffprobe test".into(),
-        });
-        let job_id = state.add_job(PathBuf::from("/videos/example.mp4"));
+    fn enqueue(state: &mut Demux, input: &str) -> JobId {
+        let input = PathBuf::from(input);
+        state.output_settings.set_default_from_input(&input);
+        let output = state.output_settings.output_path(&input);
+        let _ = state.queue.enqueue(input, output);
+        state.queue.selected().unwrap().id.clone()
+    }
 
-        let _ = state.update(Message::ProbeCompleted {
-            job_id,
+    fn start(state: &mut Demux, job_id: &JobId) {
+        let _ = state.queue.update(queue::Message::ProbeCompleted {
+            job_id: job_id.clone(),
             result: Ok(metadata()),
         });
+        let _ = state.queue.update(queue::Message::StartSelected);
+    }
+
+    #[test]
+    fn probe_completion_makes_selected_job_ready() {
+        let mut state = Demux {
+            dependency_state: DependencyState::Ready(Dependencies {
+                ffmpeg_version: "ffmpeg test".into(),
+                ffprobe_version: "ffprobe test".into(),
+            }),
+            ..Demux::default()
+        };
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+
+        let _ = state.update(Message::Queue(queue::Message::ProbeCompleted {
+            job_id,
+            result: Ok(metadata()),
+        }));
 
         assert!(matches!(
-            state.selected_job().map(|job| &job.status),
+            state.queue.selected_status(),
             Some(JobStatus::Ready)
         ));
         assert!(state.can_start());
@@ -238,15 +201,15 @@ mod tests {
     #[test]
     fn probe_failure_is_visible_in_job_and_error_area() {
         let mut state = Demux::default();
-        let job_id = state.add_job(PathBuf::from("/videos/silent.mp4"));
+        let job_id = enqueue(&mut state, "/videos/silent.mp4");
 
-        let _ = state.update(Message::ProbeCompleted {
+        let _ = state.update(Message::Queue(queue::Message::ProbeCompleted {
             job_id,
             result: Err("No audio stream was found".into()),
-        });
+        }));
 
         assert!(matches!(
-            state.selected_job().map(|job| &job.status),
+            state.queue.selected_status(),
             Some(JobStatus::Failed(_))
         ));
         assert_eq!(state.error.as_deref(), Some("No audio stream was found"));
@@ -255,8 +218,8 @@ mod tests {
     #[test]
     fn successful_rip_adds_a_completion_toast() {
         let mut state = Demux::default();
-        let job_id = state.add_job(PathBuf::from("/videos/example.mp4"));
-        state.job_mut(&job_id).unwrap().start_ripping();
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+        start(&mut state, &job_id);
 
         let _ = state.update(Message::RipCompleted {
             job_id,
@@ -271,8 +234,8 @@ mod tests {
     #[test]
     fn failed_rip_adds_a_danger_toast_and_keeps_the_error() {
         let mut state = Demux::default();
-        let job_id = state.add_job(PathBuf::from("/videos/example.mp4"));
-        state.job_mut(&job_id).unwrap().start_ripping();
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+        start(&mut state, &job_id);
 
         let _ = state.update(Message::RipCompleted {
             job_id,
@@ -281,5 +244,51 @@ mod tests {
 
         assert_eq!(state.notifications.len(), 1);
         assert_eq!(state.error.as_deref(), Some("FFmpeg exited with status 1"));
+    }
+
+    #[test]
+    fn selected_file_action_wires_output_settings_into_the_queue() {
+        let mut state = Demux::default();
+
+        let _ = state.update(Message::Queue(queue::Message::FileSelected(Some(
+            PathBuf::from("/videos/example.mp4"),
+        ))));
+
+        let job = state.queue.selected().unwrap();
+        assert_eq!(job.input, "/videos/example.mp4");
+        assert_eq!(job.output, "/videos/example.mp3");
+        assert!(matches!(job.status, JobStatus::Probing));
+    }
+
+    #[test]
+    fn stale_rip_completion_does_not_create_a_notification() {
+        let mut state = Demux::default();
+
+        let _ = state.update(Message::RipCompleted {
+            job_id: JobId::new(99),
+            result: Ok(RipOutcome {
+                status: "success".into(),
+            }),
+        });
+
+        assert_eq!(state.notifications.len(), 0);
+    }
+
+    #[test]
+    fn duplicate_rip_completion_does_not_create_another_notification() {
+        let mut state = Demux::default();
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+        start(&mut state, &job_id);
+        let completion = || Message::RipCompleted {
+            job_id: job_id.clone(),
+            result: Ok(RipOutcome {
+                status: "success".into(),
+            }),
+        };
+
+        let _ = state.update(completion());
+        let _ = state.update(completion());
+
+        assert_eq!(state.notifications.len(), 1);
     }
 }
