@@ -9,9 +9,9 @@ use crate::{
         intake::{AcceptedInput, IntakeResult, RejectedInput},
         queue_runner::{QueueRunSummary, QueueRunner},
     },
-    ffmpeg::{RipOutcome, RipRequest},
+    ffmpeg::{FfmpegProgress, RipOutcome, RipRequest},
     model::{
-        job::{JobId, JobStatus, RipJob},
+        job::{JobId, JobStatus, RipJob, RipProgress},
         media::MediaInfo,
     },
 };
@@ -51,13 +51,17 @@ pub enum Message {
     Select(JobId),
     Remove(JobId),
     StartQueue,
+    ProgressReceived {
+        job_id: JobId,
+        progress: FfmpegProgress,
+    },
     RipCompleted {
         job_id: JobId,
         result: TaskResult<RipOutcome>,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Action {
     None,
     FilePickerOpened,
@@ -65,8 +69,15 @@ pub(crate) enum Action {
     IntakeAccepted(Vec<AcceptedInput>),
     ProbeRequested(Vec<(JobId, PathBuf)>),
     ProbeFailed(String),
-    ResolveOutput { job_id: JobId, requested: PathBuf },
-    RipRequested { job_id: JobId, request: RipRequest },
+    ResolveOutput {
+        job_id: JobId,
+        requested: PathBuf,
+    },
+    RipRequested {
+        job_id: JobId,
+        request: RipRequest,
+        initial_progress: RipProgress,
+    },
     QueueFinished(QueueRunSummary),
 }
 
@@ -235,6 +246,10 @@ impl Queue {
                 let action = self.output_resolved(&job_id, result);
                 (action, Task::none())
             }
+            Message::ProgressReceived { job_id, progress } => {
+                self.record_progress(&job_id, progress);
+                (Action::None, Task::none())
+            }
             Message::RipCompleted { job_id, result } => {
                 let action = self.finish_active(&job_id, result);
                 (action, Task::none())
@@ -377,6 +392,7 @@ impl Queue {
                 Action::RipRequested {
                     job_id: job_id.clone(),
                     request: RipRequest::new(job.input.clone(), output),
+                    initial_progress: job.progress.clone(),
                 }
             }
             Err(error) => {
@@ -418,6 +434,25 @@ impl Queue {
         self.advance_runner()
     }
 
+    fn record_progress(&mut self, job_id: &JobId, progress: FfmpegProgress) {
+        if !self.is_active_job(job_id) {
+            return;
+        }
+        let Some(job) = self.job_mut(job_id) else {
+            return;
+        };
+        if !matches!(job.status, JobStatus::Ripping) {
+            return;
+        }
+
+        job.record_progress(
+            progress.elapsed,
+            progress.speed,
+            progress.bitrate_kbps,
+            progress.output_size,
+        );
+    }
+
     pub(crate) fn can_start(&self) -> bool {
         !self.is_running()
             && !self.discovering
@@ -443,6 +478,10 @@ impl Queue {
 
     pub(crate) fn is_running(&self) -> bool {
         self.runner.is_some()
+    }
+
+    pub(crate) fn is_active_job(&self, job_id: &JobId) -> bool {
+        self.runner.as_ref().and_then(QueueRunner::active) == Some(job_id)
     }
 
     pub(crate) fn run_progress(&self) -> Option<(usize, usize)> {
@@ -624,7 +663,7 @@ impl Queue {
             );
         }
 
-        container(content).width(FillPortion(7)).height(Fill).into()
+        container(content).width(Fill).height(Fill).into()
     }
 
     fn queue_panel(&self) -> Element<'_, Message> {
@@ -757,11 +796,19 @@ fn job_row(
     selected: bool,
     run_progress: Option<(usize, usize)>,
 ) -> Element<'_, Message> {
+    let duration_known = !job.progress.duration.is_zero();
+    let percent = job.progress.percent;
     let job = JobPresentation::from(job);
     let id = job.id.clone();
     let status_label = run_progress.map_or_else(
         || job.status.label.to_owned(),
-        |(position, total)| format!("Ripping ({position} of {total})"),
+        |(position, total)| {
+            if !duration_known {
+                format!("Ripping ({position} of {total})")
+            } else {
+                format!("Ripping ({position} of {total}) · {percent:.0}%")
+            }
+        },
     );
 
     let filename: Element<'_, Message> = if let Some(detail) = job.terminal_detail {
@@ -1051,6 +1098,48 @@ mod tests {
         assert!(!queue.is_running());
         assert!(matches!(queue.jobs[0].status, JobStatus::Failed(_)));
         assert!(matches!(queue.jobs[1].status, JobStatus::Completed));
+    }
+
+    #[test]
+    fn progress_updates_only_the_active_job_and_remains_monotonic() {
+        let mut queue = Queue::new();
+        let active = enqueue(&mut queue, "active");
+        let waiting = enqueue(&mut queue, "waiting");
+        for job_id in [&active, &waiting] {
+            let _ = queue.update(Message::ProbeCompleted {
+                job_id: job_id.clone(),
+                result: Ok(metadata()),
+            });
+        }
+        let _ = queue.start_queue();
+
+        let _ = queue.update(Message::ProgressReceived {
+            job_id: waiting,
+            progress: FfmpegProgress {
+                elapsed: Some(Duration::from_secs(60)),
+                ..FfmpegProgress::default()
+            },
+        });
+        let _ = queue.update(Message::ProgressReceived {
+            job_id: active.clone(),
+            progress: FfmpegProgress {
+                elapsed: Some(Duration::from_secs(40)),
+                speed: Some(2.0),
+                ..FfmpegProgress::default()
+            },
+        });
+        let _ = queue.update(Message::ProgressReceived {
+            job_id: active,
+            progress: FfmpegProgress {
+                elapsed: Some(Duration::from_secs(30)),
+                ..FfmpegProgress::default()
+            },
+        });
+
+        assert_eq!(queue.jobs[0].progress.elapsed, Duration::from_secs(40));
+        assert!(queue.jobs[0].progress.percent > 53.0);
+        assert_eq!(queue.jobs[0].progress.speed, Some(2.0));
+        assert_eq!(queue.jobs[1].progress.elapsed, Duration::ZERO);
     }
 
     #[test]

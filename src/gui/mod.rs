@@ -23,6 +23,7 @@ mod icon;
 mod message;
 mod output_settings;
 mod presentation;
+mod progress;
 mod queue;
 mod state;
 mod style;

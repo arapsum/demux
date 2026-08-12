@@ -39,18 +39,6 @@ pub async fn probe(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
         .await
 }
 
-/// Extracts one audio file through the production FFmpeg adapter.
-pub async fn rip(job_id: JobId, request: RipRequest) -> Result<RipOutcome> {
-    let span = info_span!("audio_rip_job", job_id = job_id.0);
-    async move {
-        Ok(FfmpegAudioRipper::<TokioProcessRunner>::default()
-            .rip(&request)
-            .await?)
-    }
-    .instrument(span)
-    .await
-}
-
 /// Extracts one audio file and forwards bounded machine-readable progress.
 pub async fn rip_with_progress(
     job_id: JobId,

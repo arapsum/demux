@@ -1,5 +1,5 @@
 use iced::{
-    Color, Element, Fill, Font, Padding,
+    Color, Element, Fill, FillPortion, Font, Padding,
     font::Weight,
     widget::{column, container, row, text},
 };
@@ -40,12 +40,17 @@ impl Demux {
         .spacing(14)
         .align_y(iced::Alignment::Center);
 
-        let workspace = row![
+        let work_area = column![
             self.queue.view(self.error.as_deref()).map(Message::Queue),
-            self.settings_panel()
+            self.progress.view().map(Message::Progress),
         ]
-        .spacing(16)
+        .spacing(10)
+        .width(FillPortion(7))
         .height(Fill);
+
+        let workspace = row![work_area, self.settings_panel()]
+            .spacing(16)
+            .height(Fill);
 
         let content = container(column![header, workspace].spacing(18))
             .width(Fill)

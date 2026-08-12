@@ -1,8 +1,9 @@
 use iced::Task;
+use iced::futures::SinkExt;
 
 use crate::{app::runtime, ffmpeg::DependencyState};
 
-use super::{message::Message, output_settings, queue, share_error, state::Demux};
+use super::{message::Message, output_settings, progress, queue, share_error, state::Demux};
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
@@ -45,7 +46,26 @@ impl Demux {
                 }
                 task.map(Message::OutputSettings)
             }
+            Message::Progress(message) => {
+                self.progress.update(message);
+                Task::none()
+            }
+            Message::RipProgress { job_id, progress } => {
+                if self.queue.is_active_job(&job_id) {
+                    self.progress.update(progress::Message::Advanced {
+                        job_id: job_id.clone(),
+                        progress: progress.clone(),
+                    });
+                }
+                self.update_queue(queue::Message::ProgressReceived { job_id, progress })
+            }
             Message::RipCompleted { job_id, result } => {
+                if self.queue.is_active_job(&job_id) {
+                    self.progress.update(progress::Message::Finished {
+                        job_id: job_id.clone(),
+                        succeeded: result.is_ok(),
+                    });
+                }
                 self.update_queue(queue::Message::RipCompleted { job_id, result })
             }
             Message::Notifications(message) => self
@@ -124,19 +144,23 @@ impl Demux {
                     })
                 },
             ),
-            queue::Action::RipRequested { job_id, request } => {
+            queue::Action::RipRequested {
+                job_id,
+                request,
+                initial_progress,
+            } => {
                 if !matches!(self.dependency_state, DependencyState::Ready(_))
                     || !self.output_settings.has_folder()
                 {
                     return Task::none();
                 }
                 self.error = None;
-                Task::perform(runtime::rip(job_id.clone(), request), move |result| {
-                    Message::RipCompleted {
-                        job_id,
-                        result: share_error(result),
-                    }
-                })
+                self.progress.update(progress::Message::Started {
+                    job_id: job_id.clone(),
+                    request: request.clone(),
+                    progress: initial_progress,
+                });
+                rip_task(job_id, request)
             }
             queue::Action::QueueFinished(summary) => {
                 let body = format!(
@@ -165,6 +189,42 @@ impl Demux {
             | queue::Action::ProbeFailed(_) => Task::none(),
         }
     }
+}
+
+fn rip_task(job_id: crate::model::job::JobId, request: crate::ffmpeg::RipRequest) -> Task<Message> {
+    let stream = iced::stream::channel(32, async move |mut output| {
+        let (progress_sender, mut progress_receiver) = tokio::sync::mpsc::channel(16);
+        let rip = runtime::rip_with_progress(job_id.clone(), request, progress_sender);
+        tokio::pin!(rip);
+        let mut progress_open = true;
+
+        loop {
+            tokio::select! {
+                progress = progress_receiver.recv(), if progress_open => {
+                    match progress {
+                        Some(progress) => {
+                            let _ = output.try_send(Message::RipProgress {
+                                job_id: job_id.clone(),
+                                progress,
+                            });
+                        }
+                        None => progress_open = false,
+                    }
+                }
+                result = &mut rip => {
+                    let _ = output
+                        .send(Message::RipCompleted {
+                            job_id,
+                            result: share_error(result),
+                        })
+                        .await;
+                    break;
+                }
+            }
+        }
+    });
+
+    Task::run(stream, std::convert::identity)
 }
 
 #[cfg(test)]

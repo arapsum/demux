@@ -1,6 +1,7 @@
 use crate::ffmpeg::DependencyState;
 
 use super::output_settings::OutputSettings;
+use super::progress::Progress;
 use super::queue::Queue;
 use super::toast::Notifications;
 
@@ -9,6 +10,7 @@ pub struct Demux {
     pub(crate) dependency_state: DependencyState,
     pub(crate) queue: Queue,
     pub(crate) output_settings: OutputSettings,
+    pub(crate) progress: Progress,
     pub(crate) error: Option<String>,
     pub(crate) notifications: Notifications,
 }
@@ -19,6 +21,7 @@ impl Default for Demux {
             dependency_state: DependencyState::Checking,
             queue: Queue::new(),
             output_settings: OutputSettings::new(),
+            progress: Progress::new(),
             error: None,
             notifications: Notifications::new(),
         }

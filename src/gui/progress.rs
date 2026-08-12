@@ -1,0 +1,339 @@
+use std::path::Path;
+
+use iced::font::Weight;
+use iced::widget::{column, container, progress_bar, row, space, text};
+use iced::{Element, Fill, Font, Padding};
+
+use crate::{
+    ffmpeg::{FfmpegProgress, RipRequest},
+    model::job::{JobId, RipProgress},
+};
+
+use super::style::{DANGER, SUCCESS, TEXT_MUTED, inset_panel, panel};
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Started {
+        job_id: JobId,
+        request: RipRequest,
+        progress: RipProgress,
+    },
+    Advanced {
+        job_id: JobId,
+        progress: FfmpegProgress,
+    },
+    Finished {
+        job_id: JobId,
+        succeeded: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Status {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug)]
+struct ActiveProgress {
+    job_id: JobId,
+    filename: String,
+    encoder: String,
+    target_bitrate_kbps: u32,
+    progress: RipProgress,
+    status: Status,
+}
+
+#[derive(Debug)]
+pub(crate) struct Progress {
+    active: Option<ActiveProgress>,
+}
+
+impl Progress {
+    pub(crate) fn new() -> Self {
+        Self { active: None }
+    }
+
+    pub(crate) fn update(&mut self, message: Message) {
+        match message {
+            Message::Started {
+                job_id,
+                request,
+                progress,
+            } => {
+                self.active = Some(ActiveProgress {
+                    job_id,
+                    filename: filename(&request.input),
+                    encoder: request.options.encoder,
+                    target_bitrate_kbps: request.options.bitrate_kbps,
+                    progress,
+                    status: Status::Running,
+                });
+            }
+            Message::Advanced { job_id, progress } => {
+                let Some(active) = self
+                    .active
+                    .as_mut()
+                    .filter(|active| active.job_id == job_id && active.status == Status::Running)
+                else {
+                    return;
+                };
+                active.progress.update(
+                    progress.elapsed,
+                    progress.speed,
+                    progress.bitrate_kbps,
+                    progress.output_size,
+                );
+            }
+            Message::Finished { job_id, succeeded } => {
+                let Some(active) = self
+                    .active
+                    .as_mut()
+                    .filter(|active| active.job_id == job_id)
+                else {
+                    return;
+                };
+                if succeeded {
+                    active.progress.finish();
+                    active.status = Status::Completed;
+                } else {
+                    active.status = Status::Failed;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn view(&self) -> Element<'_, Message> {
+        let heading = text("Progress").size(17).font(Font {
+            weight: Weight::Semibold,
+            ..Font::default()
+        });
+
+        let Some(active) = &self.active else {
+            return container(
+                column![
+                    heading,
+                    container(
+                        column![
+                            text("No extraction in progress").font(Font {
+                                weight: Weight::Semibold,
+                                ..Font::default()
+                            }),
+                            text("Live elapsed time, speed, bitrate, and estimates will appear when the queue starts.")
+                                .size(12)
+                                .color(TEXT_MUTED),
+                        ]
+                        .spacing(5),
+                    )
+                    .width(Fill)
+                    .padding(14)
+                    .style(inset_panel),
+                ]
+                .spacing(10),
+            )
+            .width(Fill)
+            .padding(16)
+            .style(panel)
+            .into();
+        };
+
+        let status_label = match active.status {
+            Status::Running => "Ripping",
+            Status::Completed => "Completed",
+            Status::Failed => "Failed",
+        };
+        let status_color = match active.status {
+            Status::Running => super::style::ACCENT,
+            Status::Completed => SUCCESS,
+            Status::Failed => DANGER,
+        };
+        let duration_known = !active.progress.duration.is_zero();
+        let percent_label = if duration_known {
+            format!("{:.0}%", active.progress.percent)
+        } else {
+            "Indeterminate".to_owned()
+        };
+        let bar_value = if duration_known {
+            active.progress.percent as f32
+        } else {
+            0.0
+        };
+
+        let metrics = row![
+            metric("Elapsed", format_duration(active.progress.elapsed)),
+            metric(
+                "Remaining",
+                active
+                    .progress
+                    .remaining
+                    .map(format_duration)
+                    .unwrap_or_else(|| "Unknown".to_owned())
+            ),
+            metric(
+                "Speed",
+                active
+                    .progress
+                    .speed
+                    .map(|speed| format!("{speed:.2}×"))
+                    .unwrap_or_else(|| "Unknown".to_owned())
+            ),
+            metric(
+                "Bitrate",
+                active
+                    .progress
+                    .bitrate_kbps
+                    .map(|bitrate| format!("{bitrate:.0} kbps"))
+                    .unwrap_or_else(|| format!("{} kbps target", active.target_bitrate_kbps))
+            ),
+            metric(
+                "Output size",
+                active
+                    .progress
+                    .output_size
+                    .map(format_size)
+                    .unwrap_or_else(|| "Unknown".to_owned())
+            ),
+        ]
+        .spacing(18);
+
+        container(
+            column![
+                row![
+                    heading,
+                    space::horizontal(),
+                    text(status_label).size(12).color(status_color)
+                ]
+                .align_y(iced::Alignment::Center),
+                row![
+                    text(format!("{}: {}", status_label, active.filename))
+                        .size(14)
+                        .font(Font {
+                            weight: Weight::Semibold,
+                            ..Font::default()
+                        }),
+                    space::horizontal(),
+                    text(format!(
+                        "{} / {}",
+                        format_duration(active.progress.elapsed),
+                        if duration_known {
+                            format_duration(active.progress.duration)
+                        } else {
+                            "Unknown".to_owned()
+                        }
+                    ))
+                    .size(12)
+                    .color(TEXT_MUTED),
+                ]
+                .align_y(iced::Alignment::Center),
+                row![
+                    progress_bar(0.0..=100.0, bar_value).girth(8).length(Fill),
+                    text(percent_label).size(12).width(88),
+                ]
+                .spacing(12)
+                .align_y(iced::Alignment::Center),
+                metrics,
+                text(format!("Audio: {} · MP3", active.encoder))
+                    .size(11)
+                    .color(TEXT_MUTED),
+            ]
+            .spacing(9),
+        )
+        .width(Fill)
+        .padding(Padding::from([14, 16]))
+        .style(panel)
+        .into()
+    }
+}
+
+fn metric(label: &str, value: String) -> Element<'_, Message> {
+    column![text(label).size(11).color(TEXT_MUTED), text(value).size(12),]
+        .spacing(2)
+        .into()
+}
+
+fn filename(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Unknown file")
+        .to_owned()
+}
+
+fn format_duration(duration: std::time::Duration) -> String {
+    let seconds = duration.as_secs();
+    let hours = seconds / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    const MIB: f64 = 1_048_576.0;
+    if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / MIB)
+    } else {
+        format!("{:.1} KB", bytes as f64 / 1_024.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    fn started() -> Message {
+        Message::Started {
+            job_id: JobId::new(1),
+            request: RipRequest::new("/videos/example.mp4", "/music/example.mp3"),
+            progress: RipProgress {
+                duration: Duration::from_secs(120),
+                ..RipProgress::default()
+            },
+        }
+    }
+
+    #[test]
+    fn ignores_stale_updates_and_finishes_the_active_job() {
+        let mut state = Progress::new();
+        state.update(started());
+        state.update(Message::Advanced {
+            job_id: JobId::new(99),
+            progress: FfmpegProgress {
+                elapsed: Some(Duration::from_secs(60)),
+                ..FfmpegProgress::default()
+            },
+        });
+        assert_eq!(
+            state.active.as_ref().unwrap().progress.elapsed,
+            Duration::ZERO
+        );
+
+        state.update(Message::Advanced {
+            job_id: JobId::new(1),
+            progress: FfmpegProgress {
+                elapsed: Some(Duration::from_secs(60)),
+                speed: Some(2.0),
+                ..FfmpegProgress::default()
+            },
+        });
+        state.update(Message::Finished {
+            job_id: JobId::new(1),
+            succeeded: true,
+        });
+
+        let active = state.active.as_ref().unwrap();
+        assert_eq!(active.status, Status::Completed);
+        assert_eq!(active.progress.percent, 100.0);
+    }
+
+    #[test]
+    fn formatters_label_measurements_compactly() {
+        assert_eq!(format_duration(Duration::from_secs(3_661)), "01:01:01");
+        assert_eq!(format_size(1_572_864), "1.5 MB");
+    }
+}
