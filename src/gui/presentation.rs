@@ -53,6 +53,10 @@ impl From<&JobStatus> for StatusPresentation {
                 label: "Ready",
                 color: SUCCESS,
             },
+            JobStatus::Queued => Self {
+                label: "Queued",
+                color: TEXT_MUTED,
+            },
             JobStatus::Ripping => Self {
                 label: "Ripping…",
                 color: ACCENT,
@@ -69,6 +73,10 @@ impl From<&JobStatus> for StatusPresentation {
                 label: "Cancelled",
                 color: TEXT_MUTED,
             },
+            JobStatus::Skipped(_) => Self {
+                label: "Skipped",
+                color: TEXT_MUTED,
+            },
         }
     }
 }
@@ -82,6 +90,7 @@ pub(crate) struct JobPresentation {
     pub(crate) output_details: &'static str,
     pub(crate) size: String,
     pub(crate) status: StatusPresentation,
+    pub(crate) terminal_detail: Option<String>,
 }
 
 impl From<&RipJob> for JobPresentation {
@@ -98,7 +107,7 @@ impl From<&RipJob> for JobPresentation {
             .unwrap_or_else(|| "—".into());
         let audio_details = job.metadata.as_ref().map_or_else(
             || match &job.status {
-                JobStatus::Failed(message) => message.clone(),
+                JobStatus::Failed(message) | JobStatus::Skipped(message) => message.clone(),
                 _ => "Inspecting media details".to_owned(),
             },
             |metadata| {
@@ -121,7 +130,6 @@ impl From<&RipJob> for JobPresentation {
                 )
             },
         );
-
         Self {
             id: job.id.clone(),
             filename,
@@ -131,6 +139,10 @@ impl From<&RipJob> for JobPresentation {
             output_details: "MP3 · 192 kbps",
             size: job.input_size.map_or_else(|| "—".into(), format_size),
             status: StatusPresentation::from(&job.status),
+            terminal_detail: match &job.status {
+                JobStatus::Failed(message) | JobStatus::Skipped(message) => Some(message.clone()),
+                _ => None,
+            },
         }
     }
 }

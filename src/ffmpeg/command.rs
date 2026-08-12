@@ -59,6 +59,7 @@ impl FfmpegCommandBuilder {
     pub fn build_rip(request: &RipRequest) -> Command {
         let mut command = Command::new("ffmpeg");
         command
+            .arg("-n")
             .arg("-i")
             .arg(&request.input)
             .arg("-vn")
@@ -173,6 +174,7 @@ mod tests {
         assert_eq!(
             arguments,
             [
+                "-n",
                 "-i",
                 "input.mov",
                 "-vn",

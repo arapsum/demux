@@ -3,8 +3,9 @@
 Demux is a native Rust desktop utility for extracting audio from video files with [FFmpeg](https://ffmpeg.org/). Its goal is to make a common command-line workflow feel clear and approachable: choose your videos, configure the output, start the queue, and watch the work happen.
 
 > **Status:** early development. Demux now has a functional first Iced shell for
-> selecting and probing multiple videos, then extracting the selected job. Queue execution,
-> streaming progress, cancellation, and the complete interface remain planned.
+> selecting and probing multiple videos, then extracting every eligible job
+> sequentially. Streaming progress, cancellation, and the complete interface
+> remain planned.
 
 ## Product direction
 
@@ -37,9 +38,9 @@ The first usable release should keep the core pipeline small and reliable:
 video file → FFmpeg → audio file
 ```
 
-The first GUI slice focuses on selecting one file, probing its audio stream,
-choosing an output folder, starting extraction, and reporting completion or an
-actionable error. Queue execution, progress streaming, and cancellation come
+The current GUI slice supports multi-file and folder intake, asynchronous media
+probing, a shared output folder, and sequential MP3 extraction with per-row
+terminal states and a queue summary. Progress streaming and cancellation come
 next. Metadata editing, artwork extraction, normalization, presets, parallel
 ripping, and advanced stream selection can follow once that pipeline is solid.
 Pause is also treated as a later, platform-dependent refinement.
@@ -98,9 +99,10 @@ From the repository root, launch the Demux desktop interface:
 cargo run
 ```
 
-The first GUI milestone supports selecting one video, asynchronously probing
-its audio stream, choosing an output folder, and extracting an MP3 without
-blocking the interface. Run the test suite with:
+The current GUI supports building and probing a queue, choosing an output
+folder, and extracting eligible jobs sequentially without blocking the
+interface. Existing output files receive numbered names instead of being
+overwritten. Run the test suite with:
 
 ```bash
 cargo test
@@ -122,9 +124,10 @@ connects each reference-interface feature to its required backend behavior.
 - [x] Add the first Iced application shell and desktop layout.
 - [x] Define queue, settings, and job models.
 - [x] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
-- [ ] Implement extraction, cancellation, progress parsing, and log streaming.
+- [ ] Implement cancellation, progress parsing, and log streaming.
 - [x] Connect multi-file and folder intake, desktop drops, queue selection, and removal.
-- [ ] Connect the progress panel and queue execution controls.
+- [x] Connect sequential queue execution and queue-aware completion summaries.
+- [ ] Connect the progress panel.
 - [ ] Add packaging and platform-specific distribution guidance.
 
 ## License

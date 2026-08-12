@@ -157,6 +157,15 @@ The active selection receives the violet-neutral selected border while other
 rows remain inset neutral surfaces. Unknown probe values say “Unknown”; they
 never fall back to zero. A failed row carries its own actionable probe error.
 
+### Queue Execution
+
+Start Ripping operates on every eligible row in insertion order. The active row
+uses `Ripping (n of total)` while later eligible rows say Queued; completed,
+failed, and skipped rows remain visible with textual terminal states. Intake,
+removal, and destination edits are unavailable only while the runner owns the
+queue. The final toast reports completed, failed, and skipped counts, and failed
+rows retain their detailed process error for inspection.
+
 ### Intake Surface
 
 File intake begins with a large dashed drop target containing a restrained

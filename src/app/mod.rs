@@ -1,6 +1,7 @@
 mod cli;
 pub(crate) mod intake;
 mod output;
+pub(crate) mod queue_runner;
 pub(crate) mod runtime;
 mod services;
 mod workflow;

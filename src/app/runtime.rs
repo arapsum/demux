@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use tracing::{Instrument, info_span};
 
 use crate::{
+    app::output,
     ffmpeg::{self, Dependencies, FfmpegAudioRipper, RipOutcome, RipRequest, TokioProcessRunner},
     ffprobe,
     model::{job::JobId, media::MediaInfo},
@@ -52,6 +53,20 @@ pub async fn rip(job_id: JobId, request: RipRequest) -> Result<RipOutcome, Strin
             .rip(&request)
             .await
             .map_err(|error| error.to_string())
+    }
+    .instrument(span)
+    .await
+}
+
+/// Resolves an output without overwriting an existing file.
+pub async fn resolve_output(job_id: JobId, requested: PathBuf) -> Result<PathBuf, String> {
+    let span = info_span!("resolve_rip_output", job_id = job_id.0);
+    async move {
+        let resolved = output::available_output_path(&requested)
+            .await
+            .map_err(|error| format!("Could not inspect the output folder: {error}"))?;
+        tracing::debug!(requested = %requested.display(), resolved = %resolved.display(), "resolved collision-safe output");
+        Ok(resolved)
     }
     .instrument(span)
     .await

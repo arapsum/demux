@@ -34,7 +34,7 @@ impl Demux {
 
     pub(crate) fn can_start(&self) -> bool {
         matches!(self.dependency_state, DependencyState::Ready(_))
-            && self.queue.is_ready()
+            && self.queue.can_start()
             && self.output_settings.has_folder()
     }
 }

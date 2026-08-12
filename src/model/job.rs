@@ -84,6 +84,14 @@ impl RipJob {
         self.status = JobStatus::Ripping;
     }
 
+    pub(crate) fn queue(&mut self) {
+        self.status = JobStatus::Queued;
+    }
+
+    pub(crate) fn skip(&mut self, message: String) {
+        self.status = JobStatus::Skipped(message);
+    }
+
     pub(crate) fn complete(&mut self) {
         self.status = JobStatus::Completed;
     }
@@ -128,10 +136,12 @@ pub enum JobStatus {
     Pending,
     Probing,
     Ready,
+    Queued,
     Ripping,
     Completed,
     Failed(String),
     Cancelled,
+    Skipped(String),
 }
 
 #[cfg(test)]
@@ -193,5 +203,22 @@ mod tests {
         job.fail("ffprobe failed".to_owned());
 
         assert_eq!(job.status, JobStatus::Failed("ffprobe failed".to_owned()));
+    }
+
+    #[test]
+    fn ready_jobs_can_be_queued_and_failed_probes_can_be_skipped() {
+        let mut queued = RipJob::new(JobId::new(1), "input.mp4".into(), "output.mp3".into());
+        queued.record_metadata(media_info());
+        queued.queue();
+
+        let mut skipped = RipJob::new(JobId::new(2), "silent.mp4".into(), "silent.mp3".into());
+        skipped.fail("No audio stream was found".into());
+        skipped.skip("No audio stream was found".into());
+
+        assert_eq!(queued.status, JobStatus::Queued);
+        assert_eq!(
+            skipped.status,
+            JobStatus::Skipped("No audio stream was found".into())
+        );
     }
 }

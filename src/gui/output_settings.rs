@@ -8,7 +8,7 @@ use crate::{ffmpeg::DependencyState, model::job::JobStatus};
 
 use super::{
     presentation::{DependencyPresentation, StatusPresentation},
-    style::{TEXT_MUTED, inset_panel, panel},
+    style::{TEXT_MUTED, inset_panel, panel, primary_action},
 };
 
 #[derive(Debug, Clone)]
@@ -91,13 +91,20 @@ impl OutputSettings {
         &'a self,
         dependency_state: &DependencyState,
         job_status: Option<&JobStatus>,
+        run_progress: Option<(usize, usize)>,
         can_start: bool,
     ) -> Element<'a, Message> {
         let dependencies = DependencyPresentation::from(dependency_state);
-        let output_locked = matches!(job_status, Some(JobStatus::Ripping | JobStatus::Completed));
-        let selected_status = job_status
-            .map(StatusPresentation::from)
-            .map_or("Waiting for a file", |status| status.label);
+        let output_locked = run_progress.is_some();
+        let selected_status = run_progress.map_or_else(
+            || {
+                job_status.map(StatusPresentation::from).map_or_else(
+                    || "Waiting for a file".to_owned(),
+                    |status| status.label.into(),
+                )
+            },
+            |(position, total)| format!("Ripping {position} of {total}"),
+        );
 
         let output_input = text_input("Choose an output folder", &self.folder)
             .padding(12)
@@ -113,10 +120,14 @@ impl OutputSettings {
         } else {
             browse.on_press(Message::Browse)
         };
-        let start = button(text("Start Ripping").size(15))
+        let start_label = run_progress.map_or_else(
+            || "Start Ripping".to_owned(),
+            |(position, total)| format!("Ripping {position} of {total}…"),
+        );
+        let start = button(text(start_label).size(15))
             .width(Fill)
             .padding(13)
-            .style(button::primary)
+            .style(primary_action)
             .on_press_maybe(can_start.then_some(Message::StartRipping));
 
         container(
@@ -147,7 +158,13 @@ impl OutputSettings {
                 .spacing(7),
                 container(
                     column![
-                        text("Selected job").size(12).color(TEXT_MUTED),
+                        text(if run_progress.is_some() {
+                            "Queue execution"
+                        } else {
+                            "Selected job"
+                        })
+                        .size(12)
+                        .color(TEXT_MUTED),
                         text(selected_status).size(16).font(Font {
                             weight: Weight::Semibold,
                             ..Font::default()
@@ -162,9 +179,11 @@ impl OutputSettings {
                 space::vertical(),
                 start,
                 text(if can_start {
-                    "Ready to extract audio"
+                    "Ready to process every eligible job"
+                } else if run_progress.is_some() {
+                    "The queue is running one extraction at a time"
                 } else {
-                    "Add a valid video and wait for probing to finish"
+                    "Add a valid video and wait for every probe to finish"
                 })
                 .size(12)
                 .color(TEXT_MUTED),

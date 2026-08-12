@@ -5,7 +5,10 @@ use iced::widget::{button, column, container, row, rule, scrollable, space, stac
 use iced::{Element, Fill, FillPortion, Font, Padding, Task};
 
 use crate::{
-    app::intake::{AcceptedInput, IntakeResult, RejectedInput},
+    app::{
+        intake::{AcceptedInput, IntakeResult, RejectedInput},
+        queue_runner::{QueueRunSummary, QueueRunner},
+    },
     ffmpeg::{RipOutcome, RipRequest},
     model::{
         job::{JobId, JobStatus, RipJob},
@@ -38,11 +41,15 @@ pub enum Message {
         job_id: JobId,
         result: Result<MediaInfo, String>,
     },
+    OutputResolved {
+        job_id: JobId,
+        result: Result<PathBuf, String>,
+    },
     ShowMore,
     DismissRejected,
     Select(JobId),
     Remove(JobId),
-    StartSelected,
+    StartQueue,
     RipCompleted {
         job_id: JobId,
         result: Result<RipOutcome, String>,
@@ -57,9 +64,9 @@ pub(crate) enum Action {
     IntakeAccepted(Vec<AcceptedInput>),
     ProbeRequested(Vec<(JobId, PathBuf)>),
     ProbeFailed(String),
+    ResolveOutput { job_id: JobId, requested: PathBuf },
     RipRequested { job_id: JobId, request: RipRequest },
-    RipCompleted { output: String },
-    RipFailed(String),
+    QueueFinished(QueueRunSummary),
 }
 
 #[derive(Debug)]
@@ -74,6 +81,7 @@ pub(crate) struct Queue {
     rejected: Vec<RejectedInput>,
     visible_jobs: usize,
     next_job_id: u64,
+    runner: Option<QueueRunner>,
 }
 
 impl Queue {
@@ -89,6 +97,7 @@ impl Queue {
             rejected: Vec::new(),
             visible_jobs: VISIBLE_JOB_BATCH,
             next_job_id: 1,
+            runner: None,
         }
     }
 
@@ -112,7 +121,7 @@ impl Queue {
             }
             Message::PathsSelected(paths) => {
                 self.picking_file = false;
-                let action = if paths.is_empty() {
+                let action = if paths.is_empty() || self.is_running() {
                     Action::None
                 } else if self.discovering {
                     self.dropped_paths.extend(paths);
@@ -130,6 +139,9 @@ impl Queue {
             }
             Message::PathsDropped(paths) => {
                 self.drop_hovered = false;
+                if self.is_running() {
+                    return (Action::None, Task::none());
+                }
                 self.dropped_paths.extend(paths);
                 self.drop_batch += 1;
                 let batch = self.drop_batch;
@@ -196,6 +208,9 @@ impl Queue {
                 (Action::None, Task::none())
             }
             Message::Remove(job_id) => {
+                if self.is_running() {
+                    return (Action::None, Task::none());
+                }
                 let removable = self
                     .jobs
                     .iter()
@@ -209,25 +224,16 @@ impl Queue {
                 }
                 (Action::None, Task::none())
             }
-            Message::StartSelected => {
-                let action = self
-                    .start_selected()
-                    .map_or(Action::None, |(job_id, request)| Action::RipRequested {
-                        job_id,
-                        request,
-                    });
+            Message::StartQueue => {
+                let action = self.start_queue();
+                (action, Task::none())
+            }
+            Message::OutputResolved { job_id, result } => {
+                let action = self.output_resolved(&job_id, result);
                 (action, Task::none())
             }
             Message::RipCompleted { job_id, result } => {
-                let action = match result {
-                    Ok(_) => self
-                        .complete(&job_id)
-                        .map_or(Action::None, |output| Action::RipCompleted { output }),
-                    Err(message) if self.fail(&job_id, message.clone()) => {
-                        Action::RipFailed(message)
-                    }
-                    Err(_) => Action::None,
-                };
+                let action = self.finish_active(&job_id, result);
                 (action, Task::none())
             }
         }
@@ -275,11 +281,6 @@ impl Queue {
         self.jobs.iter().find(|job| &job.id == selected)
     }
 
-    fn selected_mut(&mut self) -> Option<&mut RipJob> {
-        let selected = self.selected_job.as_ref()?;
-        self.jobs.iter_mut().find(|job| &job.id == selected)
-    }
-
     fn job_mut(&mut self, id: &JobId) -> Option<&mut RipJob> {
         self.jobs.iter_mut().find(|job| &job.id == id)
     }
@@ -290,53 +291,158 @@ impl Queue {
 
     pub(crate) fn set_output_paths(&mut self, mut derive: impl FnMut(&Path) -> PathBuf) {
         for job in &mut self.jobs {
-            if !matches!(job.status, JobStatus::Ripping | JobStatus::Completed) {
+            if !matches!(
+                job.status,
+                JobStatus::Queued | JobStatus::Ripping | JobStatus::Completed
+            ) {
                 job.output = derive(Path::new(&job.input)).to_string_lossy().into_owned();
             }
         }
     }
 
-    fn start_selected(&mut self) -> Option<(JobId, RipRequest)> {
-        let job = self.selected_mut()?;
-        if !matches!(job.status, JobStatus::Ready) {
-            return None;
+    fn start_queue(&mut self) -> Action {
+        if !self.can_start() {
+            return Action::None;
         }
-        job.start_ripping();
-        Some((
-            job.id.clone(),
-            RipRequest::new(job.input.clone(), job.output.clone()),
-        ))
+
+        let eligible: Vec<_> = self
+            .jobs
+            .iter()
+            .filter(|job| matches!(job.status, JobStatus::Ready))
+            .map(|job| job.id.clone())
+            .collect();
+        let skipped = self
+            .jobs
+            .iter()
+            .filter(|job| matches!(job.status, JobStatus::Failed(_)))
+            .count();
+
+        for job in &mut self.jobs {
+            match &job.status {
+                JobStatus::Ready => job.queue(),
+                JobStatus::Failed(message) => job.skip(message.clone()),
+                _ => {}
+            }
+        }
+
+        self.runner = QueueRunner::new(eligible, skipped);
+        self.advance_runner()
     }
 
-    fn complete(&mut self, id: &JobId) -> Option<String> {
-        let job = self.job_mut(id)?;
-        if !matches!(job.status, JobStatus::Ripping) {
-            return None;
+    fn advance_runner(&mut self) -> Action {
+        let Some(runner) = &mut self.runner else {
+            return Action::None;
+        };
+        if let Some(job_id) = runner.start_next() {
+            let Some(job) = self.jobs.iter_mut().find(|job| job.id == job_id) else {
+                return Action::None;
+            };
+            if !matches!(job.status, JobStatus::Queued) {
+                return Action::None;
+            }
+            job.start_ripping();
+            self.selected_job = Some(job_id.clone());
+            return Action::ResolveOutput {
+                job_id,
+                requested: PathBuf::from(&job.output),
+            };
         }
-        job.complete();
-        Some(job.output.clone())
+
+        if runner.is_finished() {
+            let summary = runner.summary();
+            self.runner = None;
+            Action::QueueFinished(summary)
+        } else {
+            Action::None
+        }
     }
 
-    fn fail(&mut self, id: &JobId, message: String) -> bool {
-        let Some(job) = self.job_mut(id) else {
-            return false;
+    fn output_resolved(&mut self, job_id: &JobId, result: Result<PathBuf, String>) -> Action {
+        if self.runner.as_ref().and_then(QueueRunner::active) != Some(job_id) {
+            return Action::None;
+        }
+        let Some(job) = self.job_mut(job_id) else {
+            return Action::None;
         };
         if !matches!(job.status, JobStatus::Ripping) {
-            return false;
+            return Action::None;
         }
-        job.fail(message);
-        true
+
+        match result {
+            Ok(output) => {
+                job.output = output.to_string_lossy().into_owned();
+                Action::RipRequested {
+                    job_id: job_id.clone(),
+                    request: RipRequest::new(job.input.clone(), output),
+                }
+            }
+            Err(message) => {
+                job.fail(message);
+                if let Some(runner) = &mut self.runner {
+                    runner.finish_active(job_id, false);
+                }
+                self.advance_runner()
+            }
+        }
     }
 
-    pub(crate) fn is_ready(&self) -> bool {
-        matches!(self.selected_status(), Some(JobStatus::Ready))
+    fn finish_active(&mut self, job_id: &JobId, result: Result<RipOutcome, String>) -> Action {
+        if self.runner.as_ref().and_then(QueueRunner::active) != Some(job_id) {
+            return Action::None;
+        }
+        let Some(job) = self.job_mut(job_id) else {
+            return Action::None;
+        };
+        if !matches!(job.status, JobStatus::Ripping) {
+            return Action::None;
+        }
+
+        let succeeded = match result {
+            Ok(_) => {
+                job.complete();
+                true
+            }
+            Err(message) => {
+                job.fail(message);
+                false
+            }
+        };
+        if let Some(runner) = &mut self.runner {
+            runner.finish_active(job_id, succeeded);
+        }
+        self.advance_runner()
+    }
+
+    pub(crate) fn can_start(&self) -> bool {
+        !self.is_running()
+            && !self.discovering
+            && !self.picking_file
+            && !self
+                .jobs
+                .iter()
+                .any(|job| matches!(job.status, JobStatus::Pending | JobStatus::Probing))
+            && self
+                .jobs
+                .iter()
+                .any(|job| matches!(job.status, JobStatus::Ready))
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        matches!(
-            self.selected_status(),
-            Some(JobStatus::Probing | JobStatus::Ripping)
-        )
+        self.discovering
+            || self.is_running()
+            || self
+                .jobs
+                .iter()
+                .any(|job| matches!(job.status, JobStatus::Pending | JobStatus::Probing))
+    }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.runner.is_some()
+    }
+
+    pub(crate) fn run_progress(&self) -> Option<(usize, usize)> {
+        let runner = self.runner.as_ref()?;
+        Some((runner.position()?, runner.total()))
     }
 
     pub(crate) fn view<'a>(&'a self, error: Option<&'a str>) -> Element<'a, Message> {
@@ -346,6 +452,8 @@ impl Queue {
             "Waiting for file selection…"
         } else if self.discovering {
             "Discovering supported media…"
+        } else if self.is_running() {
+            "Queue running — intake will reopen when it finishes"
         } else if self.is_busy() {
             "Demux is inspecting your videos"
         } else if self.jobs.is_empty() {
@@ -354,7 +462,7 @@ impl Queue {
             "Add more videos"
         };
 
-        let intake_enabled = !self.picking_file && !self.discovering;
+        let intake_enabled = !self.picking_file && !self.discovering && !self.is_running();
 
         let add_button = button(
             row![
@@ -389,7 +497,7 @@ impl Queue {
 
         let remove_message = self
             .selected()
-            .filter(|job| !matches!(job.status, JobStatus::Ripping))
+            .filter(|_| !self.is_running())
             .map(|job| Message::Remove(job.id.clone()));
         let remove_enabled = remove_message.is_some();
         let remove_button = button(
@@ -555,7 +663,15 @@ impl Queue {
             let mut jobs = self.jobs.iter().take(self.visible_jobs).fold(
                 column![].spacing(8),
                 |column, job| {
-                    column.push(job_row(job, self.selected_job.as_ref() == Some(&job.id)))
+                    let run_progress = self.runner.as_ref().and_then(|runner| {
+                        (runner.active() == Some(&job.id))
+                            .then(|| (runner.position().unwrap_or(1), runner.total()))
+                    });
+                    column.push(job_row(
+                        job,
+                        self.selected_job.as_ref() == Some(&job.id),
+                        run_progress,
+                    ))
                 },
             );
             if self.visible_jobs < self.jobs.len() {
@@ -581,9 +697,22 @@ impl Queue {
     }
 }
 
-fn job_row(job: &RipJob, selected: bool) -> Element<'_, Message> {
+fn job_row(
+    job: &RipJob,
+    selected: bool,
+    run_progress: Option<(usize, usize)>,
+) -> Element<'_, Message> {
     let job = JobPresentation::from(job);
     let id = job.id.clone();
+    let status_label = run_progress.map_or_else(
+        || job.status.label.to_owned(),
+        |(position, total)| format!("Ripping ({position} of {total})"),
+    );
+
+    let terminal_detail: Element<'_, Message> = job.terminal_detail.as_ref().map_or_else(
+        || space::vertical().height(0).into(),
+        |detail| text(detail.clone()).size(12).color(DANGER_TEXT).into(),
+    );
 
     let row = container(
         column![
@@ -597,7 +726,7 @@ fn job_row(job: &RipJob, selected: bool) -> Element<'_, Message> {
                 ]
                 .spacing(4)
                 .width(Fill),
-                text(job.status.label)
+                text(status_label)
                     .size(13)
                     .font(Font {
                         weight: Weight::Semibold,
@@ -635,6 +764,7 @@ fn job_row(job: &RipJob, selected: bool) -> Element<'_, Message> {
                     .width(FillPortion(1)),
             ]
             .spacing(18),
+            terminal_detail,
         ]
         .spacing(14),
     )
@@ -799,15 +929,100 @@ mod tests {
             job_id: job_id.clone(),
             result: Ok(metadata()),
         });
-        let _ = queue.start_selected();
-
-        assert_eq!(queue.complete(&job_id), Some("/music/example.mp3".into()));
-        assert_eq!(queue.complete(&job_id), None);
-        assert!(!queue.fail(&job_id, "late failure".into()));
+        assert!(matches!(queue.start_queue(), Action::ResolveOutput { .. }));
+        assert!(matches!(
+            queue.output_resolved(&job_id, Ok(PathBuf::from("/music/example.mp3"))),
+            Action::RipRequested { .. }
+        ));
+        assert!(matches!(
+            queue.finish_active(
+                &job_id,
+                Ok(RipOutcome {
+                    status: "success".into()
+                })
+            ),
+            Action::QueueFinished(QueueRunSummary {
+                completed: 1,
+                failed: 0,
+                skipped: 0,
+            })
+        ));
+        assert_eq!(
+            queue.finish_active(&job_id, Err("late failure".into())),
+            Action::None
+        );
         assert!(matches!(
             queue.selected_status(),
             Some(JobStatus::Completed)
         ));
+    }
+
+    #[test]
+    fn queue_runs_in_order_and_continues_after_failure() {
+        let mut queue = Queue::new();
+        let first = enqueue(&mut queue, "first");
+        let second = enqueue(&mut queue, "second");
+        for job_id in [&first, &second] {
+            let _ = queue.update(Message::ProbeCompleted {
+                job_id: job_id.clone(),
+                result: Ok(metadata()),
+            });
+        }
+
+        let first_action = queue.start_queue();
+        assert!(matches!(
+            first_action,
+            Action::ResolveOutput { job_id, .. } if job_id == first
+        ));
+        assert_eq!(queue.run_progress(), Some((1, 2)));
+        assert_eq!(queue.start_queue(), Action::None);
+
+        let _ = queue.output_resolved(&first, Ok(PathBuf::from("/music/first.mp3")));
+        let second_action = queue.finish_active(&first, Err("first failed".into()));
+        assert!(matches!(
+            second_action,
+            Action::ResolveOutput { job_id, .. } if job_id == second
+        ));
+        assert_eq!(queue.run_progress(), Some((2, 2)));
+
+        let _ = queue.output_resolved(&second, Ok(PathBuf::from("/music/second.mp3")));
+        let finished = queue.finish_active(
+            &second,
+            Ok(RipOutcome {
+                status: "success".into(),
+            }),
+        );
+        assert_eq!(
+            finished,
+            Action::QueueFinished(QueueRunSummary {
+                completed: 1,
+                failed: 1,
+                skipped: 0,
+            })
+        );
+        assert!(!queue.is_running());
+        assert!(matches!(queue.jobs[0].status, JobStatus::Failed(_)));
+        assert!(matches!(queue.jobs[1].status, JobStatus::Completed));
+    }
+
+    #[test]
+    fn start_waits_for_all_probes_and_marks_probe_failures_skipped() {
+        let mut queue = Queue::new();
+        let ready = enqueue(&mut queue, "ready");
+        let failed = enqueue(&mut queue, "silent");
+        let _ = queue.update(Message::ProbeCompleted {
+            job_id: ready,
+            result: Ok(metadata()),
+        });
+        assert!(!queue.can_start());
+
+        let _ = queue.update(Message::ProbeCompleted {
+            job_id: failed,
+            result: Err("No audio stream was found".into()),
+        });
+        assert!(queue.can_start());
+        assert!(matches!(queue.start_queue(), Action::ResolveOutput { .. }));
+        assert!(matches!(queue.jobs[1].status, JobStatus::Skipped(_)));
     }
 
     #[test]

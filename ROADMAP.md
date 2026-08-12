@@ -115,6 +115,13 @@ Purpose: deliver the first major reference capability: building a real queue.
 
 Purpose: make Start Ripping operate on the queue instead of one selected job.
 
+**Status: complete.** Ready jobs run in insertion order through one FFmpeg
+process at a time. Probe failures are skipped, extraction failures do not stop
+later jobs, and a queue summary records completed, failed, and skipped counts.
+Existing output files are preserved by choosing the first available numbered
+name (`track (2).mp3`, `track (3).mp3`, and so on) and FFmpeg also receives its
+no-overwrite flag as a final safety boundary.
+
 ### Engine first
 
 - Add a queue runner that selects the next ready job and runs one FFmpeg process
