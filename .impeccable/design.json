@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-12T00:00:00Z",
+  "title": "Design System: Demux",
+  "extensions": {
+    "colorMeta": {
+      "workspace": { "role": "neutral", "displayName": "Workspace", "canonical": "rgb(0.055, 0.06, 0.075)", "tonalRamp": ["#090a0c", "#0e0f13", "#181a20", "#252832", "#3b3f4c", "#5d6272", "#9297a5", "#e7e9ef"] },
+      "primary": { "role": "primary", "displayName": "Signal Violet", "canonical": "rgb(0.43, 0.36, 0.96)", "tonalRamp": ["#17112f", "#251d52", "#382c78", "#5141ad", "#6e5cf5", "#9589fa", "#c0b9fd", "#eeeaff"] }
+    },
+    "shadows": [
+      { "name": "panel-ambient", "value": "0 5px 18px rgba(0,0,0,0.22)", "purpose": "Separate major panels from the workspace." }
+    ],
+    "breakpoints": [
+      { "name": "minimum-window", "value": "860x600" },
+      { "name": "default-window", "value": "1180x760" }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "The Quiet Signal Desk",
+    "overview": "A compact native work surface where media state stays legible while external tools run.",
+    "keyCharacteristics": ["Calm dark layering", "One restrained action signal", "Explicit semantic state", "Honest capability scope"],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Violet belongs to the primary action or current work, not passive decoration.", "section": "colors" }
+    ],
+    "dos": ["Keep task state visible in plain language.", "Use native dialogs for local paths."],
+    "donts": ["Do not render missing metadata as zero.", "Do not add controls before their engine behavior exists."]
+  }
+}

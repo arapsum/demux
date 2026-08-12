@@ -2,7 +2,9 @@
 
 Demux is a native Rust desktop utility for extracting audio from video files with [FFmpeg](https://ffmpeg.org/). Its goal is to make a common command-line workflow feel clear and approachable: choose your videos, configure the output, start the queue, and watch the work happen.
 
-> **Status:** early development. The repository currently contains a minimal Rust package scaffold; the Iced interface and FFmpeg pipeline are planned.
+> **Status:** early development. Demux now has a functional first Iced shell for
+> selecting, probing, and extracting one video at a time. Queue execution,
+> streaming progress, cancellation, and the complete interface remain planned.
 
 ## Product direction
 
@@ -35,7 +37,12 @@ The first usable release should keep the core pipeline small and reliable:
 video file → FFmpeg → audio file
 ```
 
-The initial milestone focuses on adding one or more files, selecting an output folder and format, starting extraction, reporting progress and errors, and cancelling a job. Metadata editing, artwork extraction, normalization, presets, parallel ripping, and advanced stream selection can follow once that pipeline is solid. Pause is also treated as a later, platform-dependent refinement rather than a requirement for the first slice.
+The first GUI slice focuses on selecting one file, probing its audio stream,
+choosing an output folder, starting extraction, and reporting completion or an
+actionable error. Queue execution, progress streaming, and cancellation come
+next. Metadata editing, artwork extraction, normalization, presets, parallel
+ripping, and advanced stream selection can follow once that pipeline is solid.
+Pause is also treated as a later, platform-dependent refinement.
 
 ## Architecture
 
@@ -63,18 +70,20 @@ For the planned application:
 - FFprobe available as `ffprobe` on `PATH`
 - A desktop environment supported by Iced
 
-The current scaffold does not yet depend on Iced or require FFmpeg to build.
+Iced is a build dependency. FFmpeg and FFprobe are runtime requirements and do
+not need to be installed to compile or test Demux.
 
 ## Getting started
 
-From the repository root:
+From the repository root, launch the Demux desktop interface:
 
 ```bash
 cargo run
 ```
 
-The current binary checks for FFmpeg and FFprobe, then prompts for an input
-video and output location. Run the test suite with:
+The first GUI milestone supports selecting one video, asynchronously probing
+its audio stream, choosing an output folder, and extracting an MP3 without
+blocking the interface. Run the test suite with:
 
 ```bash
 cargo test
@@ -90,9 +99,9 @@ cargo clippy --all-targets --all-features
 ## Roadmap
 
 - [x] Create the initial Rust package and named binary.
-- [ ] Add the Iced application shell and desktop layout.
+- [x] Add the first Iced application shell and desktop layout.
 - [ ] Define queue, settings, job, and progress models.
-- [ ] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
+- [x] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
 - [ ] Implement extraction, cancellation, progress parsing, and log streaming.
 - [ ] Connect the drop zone, queue, output settings, progress panel, and controls.
 - [ ] Add packaging and platform-specific distribution guidance.

@@ -1,0 +1,51 @@
+# Product
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+adaptive
+
+## Stack
+
+Rust desktop application using Iced for the native interface, Tokio for asynchronous process work, and FFmpeg/FFprobe as external media tools.
+
+## Users
+
+People who want to extract audio from video files without composing FFmpeg commands themselves.
+
+## Product Purpose
+
+Demux turns video-to-audio extraction into a visible, understandable workflow: choose media, inspect it, choose an output location, start extraction, and see whether the job completed or needs attention.
+
+## Operating Context
+
+Demux is a cross-platform desktop utility used with local media files and locally installed FFmpeg and FFprobe executables. The first GUI slice supports one selected file and MP3 output.
+
+## Capabilities and Constraints
+
+- Probe media asynchronously and display duration, container, and audio-stream metadata.
+- Extract MP3 audio with libmp3lame at 192 kbps.
+- Keep the interface responsive while probing and extracting.
+- FFmpeg progress streaming, cancellation, multi-file queue execution, drag and drop, folders, artwork, metadata embedding, normalization, and pause are later milestones.
+
+## Brand Commitments
+
+The product name is Demux. The supplied finished-interface reference and wireframe establish a compact desktop utility with a two-column work area, restrained neutral surfaces, clear status presentation, and a purple primary-action accent.
+
+## Evidence on Hand
+
+- Finished dark-interface reference supplied in the conversation.
+- Structural wireframe supplied in the conversation.
+- Existing domain, FFmpeg, FFprobe, workflow, and tracing implementation in `src/`.
+
+## Product Principles
+
+- Keep process complexity behind plain task-oriented controls.
+- Make job state and failure recovery immediately visible.
+- Preserve UI responsiveness during all media operations.
+- Add advanced controls only when the engine can support them honestly.
+
+## Accessibility & Inclusion
+
+Use readable contrast, explicit text labels, keyboard-focusable native controls, and status language that does not rely on color alone.
