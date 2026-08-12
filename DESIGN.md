@@ -169,6 +169,17 @@ removal, and destination edits are unavailable only while the runner owns the
 queue. The final toast reports completed, failed, and skipped counts, and failed
 rows retain their detailed process error for inspection.
 
+### Progress Surface
+
+The Progress surface sits beneath the queue and follows the active extraction.
+It leads with filename and explicit textual state, followed by elapsed and total
+time, a determinate bar when probed duration is known, and a clearly labelled
+indeterminate state otherwise. Compact measurements report speed, bitrate,
+output size, and estimated remaining time. Missing or malformed FFmpeg fields
+say “Unknown” rather than presenting a misleading zero, while terminal success
+sets known-duration progress to 100 percent even if a final snapshot was
+dropped under load.
+
 ### Intake Surface
 
 File intake begins with a large dashed drop target containing a restrained
@@ -200,7 +211,7 @@ remain for ten seconds. Every notice also offers an explicit Dismiss action.
 
 ### Don't:
 
-- **Don't** add progress, cancellation, pause, or log controls before their
+- **Don't** add cancellation, pause, or log controls before their
   engine behavior exists.
 - **Don't** use violet for inactive decoration.
 - **Don't** render missing metadata as zero.

@@ -4,8 +4,8 @@ Demux is a native Rust desktop utility for extracting audio from video files wit
 
 > **Status:** early development. Demux now has a functional first Iced shell for
 > selecting and probing multiple videos, then extracting every eligible job
-> sequentially. Streaming progress, cancellation, and the complete interface
-> remain planned.
+> sequentially with live progress and estimates. Cancellation and the complete
+> interface remain planned.
 
 ## Product direction
 
@@ -40,8 +40,8 @@ video file → FFmpeg → audio file
 
 The current GUI slice supports multi-file and folder intake, asynchronous media
 probing, a shared output folder, and sequential MP3 extraction with per-row
-terminal states and a queue summary. Progress streaming and cancellation come
-next. Metadata editing, artwork extraction, normalization, presets, parallel
+terminal states, live process measurements, and a queue summary. Cancellation
+comes next. Metadata editing, artwork extraction, normalization, presets, parallel
 ripping, and advanced stream selection can follow once that pipeline is solid.
 Pause is also treated as a later, platform-dependent refinement.
 
@@ -71,12 +71,13 @@ updated.
 The GUI follows a composed-state architecture. `Demux` is the composition root,
 while each independent surface owns its state, local messages, initialization,
 update logic, and view. The root maps child tasks and translates explicit child
-actions when a workflow crosses surface boundaries. Queue, output settings,
-and notifications use this structure today.
+actions when a workflow crosses surface boundaries. Queue, progress, output
+settings, and notifications use this structure today.
 
 ```text
 Demux
   ├── Queue            → file intake, probing, selection, and job presentation
+  ├── Progress         → active extraction measurements and estimates
   ├── OutputSettings  → folder selection and Start action
   └── Notifications   → toast lifecycle and overlay
 ```
@@ -107,8 +108,10 @@ cargo run
 
 The current GUI supports building and probing a queue, choosing an output
 folder, and extracting eligible jobs sequentially without blocking the
-interface. Existing output files receive numbered names instead of being
-overwritten. Run the test suite with:
+interface. The active extraction reports elapsed time, percentage, speed,
+bitrate, output size, and remaining-time estimates when those values are known.
+Existing output files receive numbered names instead of being overwritten. Run
+the test suite with:
 
 ```bash
 cargo test
@@ -130,10 +133,10 @@ connects each reference-interface feature to its required backend behavior.
 - [x] Add the first Iced application shell and desktop layout.
 - [x] Define queue, settings, and job models.
 - [x] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
-- [ ] Implement cancellation, progress parsing, and log streaming.
+- [ ] Implement cancellation and log streaming.
 - [x] Connect multi-file and folder intake, desktop drops, queue selection, and removal.
 - [x] Connect sequential queue execution and queue-aware completion summaries.
-- [ ] Connect the progress panel.
+- [x] Connect the progress panel.
 - [ ] Add packaging and platform-specific distribution guidance.
 
 ## License

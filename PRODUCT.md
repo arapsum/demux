@@ -31,8 +31,10 @@ Demux is a cross-platform desktop utility used with local media files and locall
   accept desktop file or folder drops.
 - Run eligible jobs sequentially, continue after individual failures, preserve
   existing outputs with numbered filenames, and report queue-wide outcomes.
-- Progress streaming, cancellation, artwork, metadata embedding, normalization,
-  and pause are later milestones.
+- Stream live elapsed time, speed, bitrate, output size, percentage, and
+  remaining-time estimates from machine-readable FFmpeg progress records.
+- Cancellation, artwork, metadata embedding, normalization, and pause are later
+  milestones.
 
 ## Brand Commitments
 

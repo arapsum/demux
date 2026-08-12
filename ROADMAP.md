@@ -150,6 +150,12 @@ no-overwrite flag as a final safety boundary.
 
 Purpose: support the reference progress panel with truthful process data.
 
+**Status: complete.** FFmpeg emits machine-readable progress records that are
+parsed into monotonic job snapshots and forwarded through bounded,
+non-blocking channels. The composed Progress surface shows elapsed and total
+time, percentage, speed, bitrate, output size, and defensive remaining-time
+estimates while labelling unavailable measurements as unknown.
+
 ### Engine first
 
 - Run FFmpeg with machine-readable progress output.
