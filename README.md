@@ -112,6 +112,9 @@ cargo clippy --all-targets --all-features
 
 ## Roadmap
 
+See [ROADMAP.md](ROADMAP.md) for the engine-first vertical-slice plan that
+connects each reference-interface feature to its required backend behavior.
+
 - [x] Create the initial Rust package and named binary.
 - [x] Add the first Iced application shell and desktop layout.
 - [ ] Define queue, settings, job, and progress models.
