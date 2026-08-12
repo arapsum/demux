@@ -5,6 +5,8 @@ use crate::{
     model::{job::JobId, media::MediaInfo},
 };
 
+use super::toast::ToastId;
+
 #[derive(Debug, Clone)]
 pub enum Message {
     DependenciesChecked(Result<Dependencies, String>),
@@ -22,4 +24,5 @@ pub enum Message {
         job_id: JobId,
         result: Result<RipOutcome, String>,
     },
+    DismissToast(ToastId),
 }

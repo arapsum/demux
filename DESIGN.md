@@ -15,6 +15,8 @@ colors:
   primary-tile: "rgb(0.20, 0.17, 0.43)"
   primary-tile-border: "rgb(0.34, 0.29, 0.67)"
   success: "rgb(0.35, 0.78, 0.57)"
+  success-surface: "rgb(0.075, 0.12, 0.10)"
+  success-border: "rgb(0.18, 0.42, 0.30)"
   warning: "rgb(0.96, 0.68, 0.30)"
   danger: "rgb(0.94, 0.39, 0.42)"
   danger-text: "rgb(0.95, 0.76, 0.77)"
@@ -152,6 +154,13 @@ during or after extraction are disabled.
 The selected job shows filename, source path, textual status, duration,
 container, codec, sample rate, channels, and fixed MP3 output. Unknown probe
 values say “Unknown”; they never fall back to zero.
+
+### Toasts
+
+Extraction outcomes appear as compact notices in the upper-right corner without
+blocking the workspace. Success notices name the generated MP3 and disappear
+after six seconds. Failure notices point back to the persistent error area and
+remain for ten seconds. Every notice also offers an explicit Dismiss action.
 
 ## Do's and Don'ts
 

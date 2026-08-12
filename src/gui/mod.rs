@@ -15,12 +15,13 @@
 
 mod message;
 mod state;
+mod toast;
 mod update;
 mod view;
 
 use iced::{Color, Size, Theme, theme::Palette, window};
 
-pub use self::{message::Message, state::Demux};
+pub use self::{message::Message, state::Demux, toast::ToastId};
 
 pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)

@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use iced::Task;
 use tracing::{Instrument, info_span};
@@ -11,7 +14,14 @@ use crate::{
     model::media::MediaInfo,
 };
 
-use super::{message::Message, state::Demux};
+use super::{
+    message::Message,
+    state::Demux,
+    toast::{Toast, ToastId},
+};
+
+const SUCCESS_TOAST_DURATION: Duration = Duration::from_secs(6);
+const FAILURE_TOAST_DURATION: Duration = Duration::from_secs(10);
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
@@ -104,23 +114,58 @@ impl Demux {
                 })
             }
             Message::RipCompleted { job_id, result } => {
-                match result {
+                let (toast, duration) = match result {
                     Ok(_) => {
+                        let output_name = self
+                            .jobs
+                            .iter()
+                            .find(|job| job.id == job_id)
+                            .and_then(|job| Path::new(&job.output).file_name())
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("Your MP3")
+                            .to_owned();
                         if let Some(job) = self.job_mut(&job_id) {
                             job.complete();
                         }
+                        (
+                            Toast::success(
+                                "Ripping complete",
+                                format!("{output_name} is ready in your output folder."),
+                            ),
+                            SUCCESS_TOAST_DURATION,
+                        )
                     }
                     Err(message) => {
                         if let Some(job) = self.job_mut(&job_id) {
                             job.fail(message.clone());
                         }
                         self.error = Some(message);
+                        (
+                            Toast::danger(
+                                "Ripping failed",
+                                "Review the error message, then try the extraction again.",
+                            ),
+                            FAILURE_TOAST_DURATION,
+                        )
                     }
-                }
+                };
+
+                let toast_id = self.push_toast(toast);
+                Task::perform(dismiss_toast_after(toast_id, duration), |toast_id| {
+                    Message::DismissToast(toast_id)
+                })
+            }
+            Message::DismissToast(toast_id) => {
+                self.dismiss_toast(toast_id);
                 Task::none()
             }
         }
     }
+}
+
+async fn dismiss_toast_after(toast_id: ToastId, duration: Duration) -> ToastId {
+    tokio::time::sleep(duration).await;
+    toast_id
 }
 
 async fn check_dependencies() -> Result<ffmpeg::Dependencies, String> {
@@ -242,5 +287,47 @@ mod tests {
             Some(JobStatus::Failed(_))
         ));
         assert_eq!(state.error.as_deref(), Some("No audio stream was found"));
+    }
+
+    #[test]
+    fn successful_rip_adds_a_completion_toast() {
+        let mut state = Demux::default();
+        let job_id = state.add_job(PathBuf::from("/videos/example.mp4"));
+        state.job_mut(&job_id).unwrap().start_ripping();
+
+        let _ = state.update(Message::RipCompleted {
+            job_id,
+            result: Ok(RipOutcome {
+                status: "success".into(),
+            }),
+        });
+
+        assert_eq!(state.toasts.len(), 1);
+        assert_eq!(state.toasts[0].title, "Ripping complete");
+        assert!(state.toasts[0].body.contains("example.mp3"));
+        assert_eq!(
+            state.toasts[0].status,
+            super::super::toast::ToastStatus::Success
+        );
+    }
+
+    #[test]
+    fn failed_rip_adds_a_danger_toast_and_keeps_the_error() {
+        let mut state = Demux::default();
+        let job_id = state.add_job(PathBuf::from("/videos/example.mp4"));
+        state.job_mut(&job_id).unwrap().start_ripping();
+
+        let _ = state.update(Message::RipCompleted {
+            job_id,
+            result: Err("FFmpeg exited with status 1".into()),
+        });
+
+        assert_eq!(state.toasts.len(), 1);
+        assert_eq!(state.toasts[0].title, "Ripping failed");
+        assert_eq!(
+            state.toasts[0].status,
+            super::super::toast::ToastStatus::Danger
+        );
+        assert_eq!(state.error.as_deref(), Some("FFmpeg exited with status 1"));
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     model::job::{JobStatus, RipJob},
 };
 
-use super::{message::Message, state::Demux};
+use super::{message::Message, state::Demux, toast};
 
 const TEXT_MUTED: Color = Color::from_rgb(0.62, 0.64, 0.70);
 const ACCENT: Color = Color::from_rgb(0.43, 0.36, 0.96);
@@ -53,12 +53,13 @@ impl Demux {
             .spacing(16)
             .height(Fill);
 
-        container(column![header, workspace].spacing(18))
+        let content = container(column![header, workspace].spacing(18))
             .width(Fill)
             .height(Fill)
             .padding(Padding::from([24, 26]))
-            .style(app_background)
-            .into()
+            .style(app_background);
+
+        toast::overlay(content, &self.toasts)
     }
 
     fn work_area(&self) -> Element<'_, Message> {

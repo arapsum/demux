@@ -5,6 +5,8 @@ use crate::{
     model::job::{JobId, JobStatus, RipJob},
 };
 
+use super::toast::{Toast, ToastId};
+
 #[derive(Debug)]
 pub struct Demux {
     pub(crate) dependency_state: DependencyState,
@@ -13,7 +15,9 @@ pub struct Demux {
     pub(crate) output_folder: String,
     pub(crate) error: Option<String>,
     pub(crate) picking_file: bool,
+    pub(crate) toasts: Vec<Toast>,
     next_job_id: u64,
+    next_toast_id: u64,
 }
 
 impl Default for Demux {
@@ -25,7 +29,9 @@ impl Default for Demux {
             output_folder: String::new(),
             error: None,
             picking_file: false,
+            toasts: Vec::new(),
             next_job_id: 1,
+            next_toast_id: 1,
         }
     }
 }
@@ -95,6 +101,17 @@ impl Demux {
             Some(JobStatus::Probing | JobStatus::Ripping)
         )
     }
+
+    pub(crate) fn push_toast(&mut self, toast: Toast) -> ToastId {
+        let id = ToastId::new(self.next_toast_id);
+        self.next_toast_id += 1;
+        self.toasts.push(toast.with_id(id));
+        id
+    }
+
+    pub(crate) fn dismiss_toast(&mut self, id: ToastId) {
+        self.toasts.retain(|toast| toast.id != id);
+    }
 }
 
 fn output_path(input: &Path, output_folder: &str) -> PathBuf {
@@ -142,5 +159,17 @@ mod tests {
             state.selected_job().map(|job| job.output.as_str()),
             Some("/music/example.mp3")
         );
+    }
+
+    #[test]
+    fn dismisses_only_the_requested_toast() {
+        let mut state = Demux::default();
+        let first = state.push_toast(Toast::success("First", "First body"));
+        let second = state.push_toast(Toast::danger("Second", "Second body"));
+
+        state.dismiss_toast(first);
+
+        assert_eq!(state.toasts.len(), 1);
+        assert_eq!(state.toasts[0].id, second);
     }
 }
