@@ -157,6 +157,18 @@ The active selection receives the violet-neutral selected border while other
 rows remain inset neutral surfaces. Unknown probe values say “Unknown”; they
 never fall back to zero. A failed row carries its own actionable probe error.
 
+### Intake Surface
+
+File intake begins with a large dashed drop target containing a restrained
+media-file symbol, a direct instruction, and the supported-format summary. A
+separate toolbar beneath it groups Add Files, Add Folder, and Remove in that
+order. Add Files is the primary violet action, Add Folder is neutral secondary,
+and Remove uses a restrained destructive outline only when a removable selection
+exists. Lucide glyphs keep these actions and the media marker optically
+consistent. The dashed outline turns violet while supported desktop drop events
+hover over the window, while status copy communicates selection and discovery
+states.
+
 ### Toasts
 
 Extraction outcomes appear as compact notices in the upper-right corner without
