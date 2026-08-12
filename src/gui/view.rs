@@ -59,7 +59,7 @@ impl Demux {
             .padding(Padding::from([24, 26]))
             .style(app_background);
 
-        toast::overlay(content, &self.toasts)
+        toast::Manager::new(content, &self.toasts).into()
     }
 
     fn work_area(&self) -> Element<'_, Message> {
