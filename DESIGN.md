@@ -167,7 +167,8 @@ and Remove uses a restrained destructive outline only when a removable selection
 exists. Lucide glyphs keep these actions and the media marker optically
 consistent. The dashed outline turns violet while supported desktop drop events
 hover over the window, while status copy communicates selection and discovery
-states.
+states. Linux builds use X11 or XWayland while Iced's native Wayland backend
+lacks the file-hover and file-drop events required by this interaction.
 
 ### Toasts
 

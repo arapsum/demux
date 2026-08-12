@@ -83,6 +83,10 @@ For the planned application:
 - FFprobe available as `ffprobe` on `PATH`
 - A desktop environment supported by Iced
 
+On Linux, Demux currently uses X11 or XWayland because Iced 0.14 does not emit
+desktop file-drop events on its Wayland backend. Native Wayland support can be
+enabled once those events are implemented upstream.
+
 Iced is a build dependency. FFmpeg and FFprobe are runtime requirements and do
 not need to be installed to compile or test Demux.
 
