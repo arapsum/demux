@@ -2,6 +2,7 @@ pub mod app;
 pub mod error;
 pub mod ffmpeg;
 pub mod ffprobe;
+pub mod gui;
 pub mod model;
 pub mod telemetry;
 
