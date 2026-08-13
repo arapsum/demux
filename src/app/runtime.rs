@@ -6,8 +6,8 @@ use crate::{
     Error, Result,
     app::output,
     ffmpeg::{
-        self, Dependencies, FfmpegAudioRipper, FfmpegProgress, RipOutcome, RipRequest,
-        TokioProcessRunner,
+        self, CancellationSignal, Dependencies, FfmpegAudioRipper, FfmpegProgress, RipRequest,
+        RipTermination, TokioProcessRunner,
     },
     ffprobe,
     model::{job::JobId, media::MediaInfo},
@@ -44,15 +44,36 @@ pub async fn rip_with_progress(
     job_id: JobId,
     request: RipRequest,
     progress: tokio::sync::mpsc::Sender<FfmpegProgress>,
-) -> Result<RipOutcome> {
+    cancellation: CancellationSignal,
+) -> Result<RipTermination> {
     let span = info_span!("audio_rip_progress_job", job_id = job_id.0);
     async move {
-        Ok(FfmpegAudioRipper::<TokioProcessRunner>::default()
-            .rip_with_progress(&request, progress)
-            .await?)
+        let termination = FfmpegAudioRipper::<TokioProcessRunner>::default()
+            .rip_with_progress_cancellable(&request, progress, cancellation)
+            .await?;
+
+        if matches!(termination, RipTermination::Cancelled { .. }) {
+            cleanup_partial_output(&request.output).await?;
+        }
+
+        Ok(termination)
     }
     .instrument(span)
     .await
+}
+
+async fn cleanup_partial_output(path: &std::path::Path) -> Result<()> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => {
+            tracing::info!(path = %path.display(), "removed partial output after cancellation");
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(Error::PartialOutputCleanup {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 /// Resolves an output without overwriting an existing file.
@@ -70,4 +91,45 @@ pub async fn resolve_output(job_id: JobId, requested: PathBuf) -> Result<PathBuf
     }
     .instrument(span)
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancellation_cleanup_removes_a_partial_output_and_tolerates_missing_files() {
+        let directory = std::env::temp_dir().join(format!(
+            "demux-runtime-cleanup-{}-{}",
+            std::process::id(),
+            JobId::new(11).0
+        ));
+        tokio::fs::create_dir_all(&directory).await.unwrap();
+        let partial = directory.join("partial.mp3");
+        tokio::fs::write(&partial, b"partial audio").await.unwrap();
+
+        cleanup_partial_output(&partial).await.unwrap();
+        assert!(!partial.exists());
+        cleanup_partial_output(&partial).await.unwrap();
+
+        tokio::fs::remove_dir(&directory).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancellation_cleanup_keeps_a_typed_path_aware_error() {
+        let directory = std::env::temp_dir().join(format!(
+            "demux-runtime-cleanup-error-{}-{}",
+            std::process::id(),
+            JobId::new(12).0
+        ));
+        tokio::fs::create_dir_all(&directory).await.unwrap();
+
+        let error = cleanup_partial_output(&directory).await.unwrap_err();
+        assert!(matches!(
+            error,
+            Error::PartialOutputCleanup { path, .. } if path == directory
+        ));
+
+        tokio::fs::remove_dir(&directory).await.unwrap();
+    }
 }

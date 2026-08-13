@@ -8,6 +8,7 @@ pub struct QueueRunSummary {
     pub completed: usize,
     pub failed: usize,
     pub skipped: usize,
+    pub cancelled: usize,
 }
 
 /// Coordinates one deterministic, single-process queue execution.
@@ -17,6 +18,7 @@ pub struct QueueRunner {
     active: Option<JobId>,
     total: usize,
     summary: QueueRunSummary,
+    cancelling: bool,
 }
 
 impl QueueRunner {
@@ -35,12 +37,13 @@ impl QueueRunner {
                 skipped,
                 ..QueueRunSummary::default()
             },
+            cancelling: false,
         })
     }
 
     #[must_use]
     pub fn start_next(&mut self) -> Option<JobId> {
-        if self.active.is_some() {
+        if self.active.is_some() || self.cancelling {
             return None;
         }
         self.active = self.pending.pop_front();
@@ -75,6 +78,33 @@ impl QueueRunner {
             self.summary.failed += 1;
         }
         true
+    }
+
+    /// Stops queue advancement and returns the jobs that will never be started.
+    pub fn request_cancel(&mut self, job_id: &JobId) -> Option<Vec<JobId>> {
+        if self.cancelling || self.active.as_ref() != Some(job_id) {
+            return None;
+        }
+
+        self.cancelling = true;
+        let pending: Vec<_> = self.pending.drain(..).collect();
+        self.summary.cancelled += pending.len();
+        Some(pending)
+    }
+
+    pub fn finish_cancelled(&mut self, job_id: &JobId) -> bool {
+        if !self.cancelling || self.active.as_ref() != Some(job_id) {
+            return false;
+        }
+
+        self.active = None;
+        self.summary.cancelled += 1;
+        true
+    }
+
+    #[must_use]
+    pub const fn is_cancelling(&self) -> bool {
+        self.cancelling
     }
 
     #[must_use]
@@ -114,6 +144,7 @@ mod tests {
                 completed: 1,
                 failed: 1,
                 skipped: 1,
+                cancelled: 0,
             }
         );
     }
@@ -121,5 +152,30 @@ mod tests {
     #[test]
     fn empty_execution_is_not_started() {
         assert!(QueueRunner::new([], 2).is_none());
+    }
+
+    #[test]
+    fn cancellation_is_idempotent_and_accounts_for_active_and_pending_jobs() {
+        let first = JobId::new(1);
+        let second = JobId::new(2);
+        let third = JobId::new(3);
+        let mut runner =
+            QueueRunner::new([first.clone(), second.clone(), third.clone()], 0).unwrap();
+        assert_eq!(runner.start_next(), Some(first.clone()));
+
+        assert_eq!(runner.request_cancel(&first), Some(vec![second, third]));
+        assert_eq!(runner.request_cancel(&first), None);
+        assert!(runner.is_cancelling());
+        assert_eq!(runner.start_next(), None);
+        assert!(runner.finish_cancelled(&first));
+        assert!(!runner.finish_cancelled(&first));
+        assert!(runner.is_finished());
+        assert_eq!(
+            runner.summary(),
+            QueueRunSummary {
+                cancelled: 3,
+                ..QueueRunSummary::default()
+            }
+        );
     }
 }

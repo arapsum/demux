@@ -9,7 +9,7 @@ use crate::{
         intake::{AcceptedInput, IntakeResult, RejectedInput},
         queue_runner::{QueueRunSummary, QueueRunner},
     },
-    ffmpeg::{FfmpegProgress, RipOutcome, RipRequest},
+    ffmpeg::{FfmpegProgress, RipRequest, RipTermination},
     model::{
         job::{JobId, JobStatus, RipJob, RipProgress},
         media::MediaInfo,
@@ -57,7 +57,7 @@ pub enum Message {
     },
     RipCompleted {
         job_id: JobId,
-        result: TaskResult<RipOutcome>,
+        result: TaskResult<RipTermination>,
     },
 }
 
@@ -78,7 +78,10 @@ pub(crate) enum Action {
         request: RipRequest,
         initial_progress: RipProgress,
     },
-    QueueFinished(QueueRunSummary),
+    QueueFinished {
+        summary: QueueRunSummary,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -94,6 +97,7 @@ pub(crate) struct Queue {
     visible_jobs: usize,
     next_job_id: u64,
     runner: Option<QueueRunner>,
+    run_error: Option<String>,
 }
 
 impl Queue {
@@ -110,6 +114,7 @@ impl Queue {
             visible_jobs: VISIBLE_JOB_BATCH,
             next_job_id: 1,
             runner: None,
+            run_error: None,
         }
     }
 
@@ -344,6 +349,7 @@ impl Queue {
         }
 
         self.runner = QueueRunner::new(eligible, skipped);
+        self.run_error = None;
         self.advance_runner()
     }
 
@@ -369,7 +375,10 @@ impl Queue {
         if runner.is_finished() {
             let summary = runner.summary();
             self.runner = None;
-            Action::QueueFinished(summary)
+            Action::QueueFinished {
+                summary,
+                error: self.run_error.take(),
+            }
         } else {
             Action::None
         }
@@ -378,6 +387,15 @@ impl Queue {
     fn output_resolved(&mut self, job_id: &JobId, result: TaskResult<PathBuf>) -> Action {
         if self.runner.as_ref().and_then(QueueRunner::active) != Some(job_id) {
             return Action::None;
+        }
+        if self.runner.as_ref().is_some_and(QueueRunner::is_cancelling) {
+            if let Some(job) = self.job_mut(job_id) {
+                job.cancel();
+            }
+            if let Some(runner) = &mut self.runner {
+                runner.finish_cancelled(job_id);
+            }
+            return self.advance_runner();
         }
         let Some(job) = self.job_mut(job_id) else {
             return Action::None;
@@ -406,32 +424,77 @@ impl Queue {
         }
     }
 
-    fn finish_active(&mut self, job_id: &JobId, result: TaskResult<RipOutcome>) -> Action {
+    fn finish_active(&mut self, job_id: &JobId, result: TaskResult<RipTermination>) -> Action {
         if self.runner.as_ref().and_then(QueueRunner::active) != Some(job_id) {
             return Action::None;
         }
         let Some(job) = self.job_mut(job_id) else {
             return Action::None;
         };
-        if !matches!(job.status, JobStatus::Ripping) {
+        if !matches!(job.status, JobStatus::Ripping | JobStatus::Cancelling) {
             return Action::None;
         }
 
-        let succeeded = match result {
-            Ok(_) => {
+        enum Finish {
+            Completed,
+            Cancelled,
+            Failed,
+        }
+
+        let finish = match result {
+            Ok(RipTermination::Completed(_)) => {
                 job.complete();
-                true
+                Finish::Completed
+            }
+            Ok(RipTermination::Cancelled { .. }) => {
+                job.cancel();
+                Finish::Cancelled
             }
             Err(error) => {
                 tracing::error!(job_id = job_id.0, error = %error, "audio extraction failed");
-                job.fail(error.to_string());
-                false
+                let message = error.to_string();
+                job.fail(message.clone());
+                if matches!(&*error, crate::Error::PartialOutputCleanup { .. }) {
+                    self.run_error = Some(message);
+                }
+                Finish::Failed
             }
         };
         if let Some(runner) = &mut self.runner {
-            runner.finish_active(job_id, succeeded);
+            match finish {
+                Finish::Completed => {
+                    runner.finish_active(job_id, true);
+                }
+                Finish::Cancelled => {
+                    runner.finish_cancelled(job_id);
+                }
+                Finish::Failed => {
+                    runner.finish_active(job_id, false);
+                }
+            }
         }
         self.advance_runner()
+    }
+
+    pub(crate) fn request_cancel(&mut self, job_id: &JobId) -> Action {
+        let Some(pending) = self
+            .runner
+            .as_mut()
+            .and_then(|runner| runner.request_cancel(job_id))
+        else {
+            return Action::None;
+        };
+
+        if let Some(active) = self.job_mut(job_id) {
+            active.start_cancelling();
+        }
+        for pending_id in pending {
+            if let Some(job) = self.job_mut(&pending_id) {
+                job.cancel();
+            }
+        }
+
+        Action::None
     }
 
     fn record_progress(&mut self, job_id: &JobId, progress: FfmpegProgress) {
@@ -482,6 +545,10 @@ impl Queue {
 
     pub(crate) fn is_active_job(&self, job_id: &JobId) -> bool {
         self.runner.as_ref().and_then(QueueRunner::active) == Some(job_id)
+    }
+
+    pub(crate) fn active_job_id(&self) -> Option<JobId> {
+        self.runner.as_ref()?.active().cloned()
     }
 
     pub(crate) fn run_progress(&self) -> Option<(usize, usize)> {
@@ -722,8 +789,9 @@ impl Queue {
                 column![],
                 |column, (index, job)| {
                     let run_progress = self.runner.as_ref().and_then(|runner| {
-                        (runner.active() == Some(&job.id))
-                            .then(|| (runner.position().unwrap_or(1), runner.total()))
+                        (runner.active() == Some(&job.id)
+                            && matches!(job.status, JobStatus::Ripping))
+                        .then(|| (runner.position().unwrap_or(1), runner.total()))
                     });
                     column.push(job_row(
                         job,
@@ -903,6 +971,7 @@ async fn pick_video_folder() -> Option<PathBuf> {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use crate::ffmpeg::RipOutcome;
     use crate::model::media::AudioMetadata;
 
     use super::*;
@@ -1032,15 +1101,19 @@ mod tests {
         assert!(matches!(
             queue.finish_active(
                 &job_id,
-                Ok(RipOutcome {
+                Ok(RipTermination::Completed(RipOutcome {
                     status: "success".into()
-                })
+                }))
             ),
-            Action::QueueFinished(QueueRunSummary {
-                completed: 1,
-                failed: 0,
-                skipped: 0,
-            })
+            Action::QueueFinished {
+                summary: QueueRunSummary {
+                    completed: 1,
+                    failed: 0,
+                    skipped: 0,
+                    cancelled: 0,
+                },
+                error: None,
+            }
         ));
         assert_eq!(
             queue.finish_active(&job_id, Err(task_error("late failure"))),
@@ -1083,21 +1156,89 @@ mod tests {
         let _ = queue.output_resolved(&second, Ok(PathBuf::from("/music/second.mp3")));
         let finished = queue.finish_active(
             &second,
-            Ok(RipOutcome {
+            Ok(RipTermination::Completed(RipOutcome {
                 status: "success".into(),
-            }),
+            })),
         );
         assert_eq!(
             finished,
-            Action::QueueFinished(QueueRunSummary {
-                completed: 1,
-                failed: 1,
-                skipped: 0,
-            })
+            Action::QueueFinished {
+                summary: QueueRunSummary {
+                    completed: 1,
+                    failed: 1,
+                    skipped: 0,
+                    cancelled: 0,
+                },
+                error: None,
+            }
         );
         assert!(!queue.is_running());
         assert!(matches!(queue.jobs[0].status, JobStatus::Failed(_)));
         assert!(matches!(queue.jobs[1].status, JobStatus::Completed));
+    }
+
+    #[test]
+    fn cancelling_stops_the_entire_queue_and_is_idempotent() {
+        let mut queue = Queue::new();
+        let first = enqueue(&mut queue, "first");
+        let second = enqueue(&mut queue, "second");
+        for job_id in [&first, &second] {
+            let _ = queue.update(Message::ProbeCompleted {
+                job_id: job_id.clone(),
+                result: Ok(metadata()),
+            });
+        }
+        let _ = queue.start_queue();
+        let _ = queue.output_resolved(&first, Ok(PathBuf::from("/music/first.mp3")));
+
+        assert_eq!(queue.request_cancel(&first), Action::None);
+        assert!(matches!(queue.jobs[0].status, JobStatus::Cancelling));
+        assert!(matches!(queue.jobs[1].status, JobStatus::Cancelled));
+        assert_eq!(queue.request_cancel(&first), Action::None);
+
+        let action = queue.finish_active(&first, Ok(RipTermination::Cancelled { forced: false }));
+        assert_eq!(
+            action,
+            Action::QueueFinished {
+                summary: QueueRunSummary {
+                    completed: 0,
+                    failed: 0,
+                    skipped: 0,
+                    cancelled: 2,
+                },
+                error: None,
+            }
+        );
+        assert!(matches!(queue.jobs[0].status, JobStatus::Cancelled));
+        assert!(!queue.is_running());
+    }
+
+    #[test]
+    fn cleanup_failure_is_preserved_in_the_terminal_queue_action() {
+        let mut queue = Queue::new();
+        let job_id = enqueue(&mut queue, "example");
+        let _ = queue.update(Message::ProbeCompleted {
+            job_id: job_id.clone(),
+            result: Ok(metadata()),
+        });
+        let _ = queue.start_queue();
+        let _ = queue.output_resolved(&job_id, Ok(PathBuf::from("/music/example.mp3")));
+        let _ = queue.request_cancel(&job_id);
+        let error = Arc::new(crate::Error::PartialOutputCleanup {
+            path: PathBuf::from("/music/example.mp3"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        });
+
+        let action = queue.finish_active(&job_id, Err(error));
+
+        assert!(matches!(
+            action,
+            Action::QueueFinished {
+                summary: QueueRunSummary { failed: 1, .. },
+                error: Some(message),
+            } if message.contains("partial output `/music/example.mp3`")
+        ));
+        assert!(matches!(queue.jobs[0].status, JobStatus::Failed(_)));
     }
 
     #[test]

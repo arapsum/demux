@@ -111,6 +111,15 @@ impl RipJob {
     pub(crate) fn fail(&mut self, message: String) {
         self.status = JobStatus::Failed(message);
     }
+
+    pub(crate) fn start_cancelling(&mut self) {
+        self.status = JobStatus::Cancelling;
+    }
+
+    pub(crate) fn cancel(&mut self) {
+        self.progress.remaining = None;
+        self.status = JobStatus::Cancelled;
+    }
 }
 
 /// Records the current progress of an audio-ripping job.
@@ -204,6 +213,7 @@ pub enum JobStatus {
     Ready,
     Queued,
     Ripping,
+    Cancelling,
     Completed,
     Failed(String),
     Cancelled,
@@ -287,6 +297,18 @@ mod tests {
             skipped.status,
             JobStatus::Skipped("No audio stream was found".into())
         );
+    }
+
+    #[test]
+    fn cancellation_has_an_explicit_transitional_and_terminal_state() {
+        let mut job = RipJob::new(JobId::new(1), "input.mp4".into(), "output.mp3".into());
+        job.record_metadata(media_info());
+        job.start_ripping();
+
+        job.start_cancelling();
+        assert_eq!(job.status, JobStatus::Cancelling);
+        job.cancel();
+        assert_eq!(job.status, JobStatus::Cancelled);
     }
 
     #[test]

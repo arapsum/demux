@@ -1,5 +1,5 @@
 use crate::{
-    ffmpeg::{Dependencies, FfmpegProgress, RipOutcome},
+    ffmpeg::{Dependencies, FfmpegProgress, RipTermination},
     model::job::JobId,
 };
 
@@ -18,7 +18,8 @@ pub enum Message {
     },
     RipCompleted {
         job_id: JobId,
-        result: TaskResult<RipOutcome>,
+        result: TaskResult<RipTermination>,
     },
+    CloseRequested,
     Notifications(toast::Message),
 }

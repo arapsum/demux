@@ -1,7 +1,11 @@
 use iced::Task;
 use iced::futures::SinkExt;
 
-use crate::{app::runtime, ffmpeg::DependencyState};
+use crate::{
+    app::runtime,
+    ffmpeg::{DependencyState, RipTermination, cancellation_pair},
+    model::job::JobId,
+};
 
 use super::{message::Message, output_settings, progress, queue, share_error, state::Demux};
 
@@ -46,13 +50,13 @@ impl Demux {
                 }
                 task.map(Message::OutputSettings)
             }
-            Message::Progress(message) => {
-                self.progress.update(message);
-                Task::none()
-            }
+            Message::Progress(message) => match self.progress.update(message) {
+                progress::Action::None => Task::none(),
+                progress::Action::CancelRequested(job_id) => self.request_cancellation(&job_id),
+            },
             Message::RipProgress { job_id, progress } => {
                 if self.queue.is_active_job(&job_id) {
-                    self.progress.update(progress::Message::Advanced {
+                    let _ = self.progress.update(progress::Message::Advanced {
                         job_id: job_id.clone(),
                         progress: progress.clone(),
                     });
@@ -61,12 +65,32 @@ impl Demux {
             }
             Message::RipCompleted { job_id, result } => {
                 if self.queue.is_active_job(&job_id) {
-                    self.progress.update(progress::Message::Finished {
+                    let status = match &result {
+                        Ok(RipTermination::Completed(_)) => progress::TerminalStatus::Completed,
+                        Ok(RipTermination::Cancelled { .. }) => progress::TerminalStatus::Cancelled,
+                        Err(_) => progress::TerminalStatus::Failed,
+                    };
+                    let _ = self.progress.update(progress::Message::Finished {
                         job_id: job_id.clone(),
-                        succeeded: result.is_ok(),
+                        status,
                     });
                 }
+                if self
+                    .active_cancellation
+                    .as_ref()
+                    .is_some_and(|(active, _)| active == &job_id)
+                {
+                    self.active_cancellation = None;
+                }
                 self.update_queue(queue::Message::RipCompleted { job_id, result })
+            }
+            Message::CloseRequested => {
+                let Some(job_id) = self.queue.active_job_id() else {
+                    return iced::exit();
+                };
+                self.exit_after_queue = true;
+                self.progress.mark_cancelling(&job_id);
+                self.request_cancellation(&job_id)
             }
             Message::Notifications(message) => self
                 .notifications
@@ -108,7 +132,7 @@ impl Demux {
             }
             queue::Action::ProbeRequested(_)
             | queue::Action::RipRequested { .. }
-            | queue::Action::QueueFinished(_) => self.handle_queue_action(action),
+            | queue::Action::QueueFinished { .. } => self.handle_queue_action(action),
             queue::Action::ResolveOutput { .. } => {
                 self.error = None;
                 self.handle_queue_action(action)
@@ -155,23 +179,30 @@ impl Demux {
                     return Task::none();
                 }
                 self.error = None;
-                self.progress.update(progress::Message::Started {
+                let _ = self.progress.update(progress::Message::Started {
                     job_id: job_id.clone(),
                     request: request.clone(),
                     progress: initial_progress,
                 });
-                rip_task(job_id, request)
+                let (handle, signal) = cancellation_pair();
+                self.active_cancellation = Some((job_id.clone(), handle));
+                rip_task(job_id, request, signal)
             }
-            queue::Action::QueueFinished(summary) => {
+            queue::Action::QueueFinished { summary, error } => {
+                if self.exit_after_queue {
+                    self.exit_after_queue = false;
+                    return iced::exit();
+                }
                 let body = format!(
-                    "{} completed, {} failed, {} skipped.",
-                    summary.completed, summary.failed, summary.skipped
+                    "{} completed, {} failed, {} skipped, {} cancelled.",
+                    summary.completed, summary.failed, summary.skipped, summary.cancelled
                 );
-                if summary.failed == 0 {
+                if let Some(error) = error {
+                    self.error = Some(error);
                     self.notifications
-                        .success("Queue complete", body)
+                        .failure("Queue finished with errors", body)
                         .map(Message::Notifications)
-                } else {
+                } else if summary.failed > 0 {
                     self.error = Some(format!(
                         "{} queue job{} failed. Select a failed job for details.",
                         summary.failed,
@@ -179,6 +210,15 @@ impl Demux {
                     ));
                     self.notifications
                         .failure("Queue finished with errors", body)
+                        .map(Message::Notifications)
+                } else if summary.cancelled > 0 {
+                    self.error = None;
+                    self.notifications
+                        .warning("Queue cancelled", body)
+                        .map(Message::Notifications)
+                } else {
+                    self.notifications
+                        .success("Queue complete", body)
                         .map(Message::Notifications)
                 }
             }
@@ -189,12 +229,32 @@ impl Demux {
             | queue::Action::ProbeFailed(_) => Task::none(),
         }
     }
+
+    fn request_cancellation(&mut self, job_id: &JobId) -> Task<Message> {
+        let action = self.queue.request_cancel(job_id);
+        if let Some((active, handle)) = &self.active_cancellation
+            && active == job_id
+        {
+            let first_request = handle.cancel();
+            tracing::info!(
+                job_id = job_id.0,
+                first_request,
+                "audio extraction cancellation requested"
+            );
+        }
+        self.handle_queue_action(action)
+    }
 }
 
-fn rip_task(job_id: crate::model::job::JobId, request: crate::ffmpeg::RipRequest) -> Task<Message> {
+fn rip_task(
+    job_id: crate::model::job::JobId,
+    request: crate::ffmpeg::RipRequest,
+    cancellation: crate::ffmpeg::CancellationSignal,
+) -> Task<Message> {
     let stream = iced::stream::channel(32, async move |mut output| {
         let (progress_sender, mut progress_receiver) = tokio::sync::mpsc::channel(16);
-        let rip = runtime::rip_with_progress(job_id.clone(), request, progress_sender);
+        let rip =
+            runtime::rip_with_progress(job_id.clone(), request, progress_sender, cancellation);
         tokio::pin!(rip);
         let mut progress_open = true;
 
@@ -232,7 +292,7 @@ mod tests {
     use std::{path::PathBuf, sync::Arc, time::Duration};
 
     use crate::{
-        ffmpeg::{Dependencies, RipOutcome},
+        ffmpeg::{Dependencies, RipOutcome, RipTermination},
         model::job::{JobId, JobStatus},
         model::media::{AudioMetadata, MediaInfo},
     };
@@ -259,6 +319,12 @@ mod tests {
                 language: None,
             },
         }
+    }
+
+    fn completed() -> RipTermination {
+        RipTermination::Completed(RipOutcome {
+            status: "success".into(),
+        })
     }
 
     fn enqueue(state: &mut Demux, input: &str) -> JobId {
@@ -352,9 +418,7 @@ mod tests {
 
         let _ = state.update(Message::RipCompleted {
             job_id,
-            result: Ok(RipOutcome {
-                status: "success".into(),
-            }),
+            result: Ok(completed()),
         });
 
         assert_eq!(state.notifications.len(), 1);
@@ -404,9 +468,7 @@ mod tests {
 
         let _ = state.update(Message::RipCompleted {
             job_id: JobId::new(99),
-            result: Ok(RipOutcome {
-                status: "success".into(),
-            }),
+            result: Ok(completed()),
         });
 
         assert_eq!(state.notifications.len(), 0);
@@ -419,14 +481,50 @@ mod tests {
         start(&mut state, &job_id);
         let completion = || Message::RipCompleted {
             job_id: job_id.clone(),
-            result: Ok(RipOutcome {
-                status: "success".into(),
-            }),
+            result: Ok(completed()),
         };
 
         let _ = state.update(completion());
         let _ = state.update(completion());
 
         assert_eq!(state.notifications.len(), 1);
+    }
+
+    #[test]
+    fn close_during_extraction_requests_the_same_managed_cancellation_path() {
+        let mut state = Demux::default();
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+        start(&mut state, &job_id);
+        let (handle, _signal) = cancellation_pair();
+        state.active_cancellation = Some((job_id, handle.clone()));
+
+        let _ = state.update(Message::CloseRequested);
+
+        assert!(state.exit_after_queue);
+        assert!(handle.is_cancelled());
+        assert!(matches!(
+            state.queue.selected_status(),
+            Some(JobStatus::Cancelling)
+        ));
+    }
+
+    #[test]
+    fn clean_cancellation_adds_a_warning_toast_without_a_persistent_error() {
+        let mut state = Demux::default();
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+        start(&mut state, &job_id);
+        let _ = state.queue.request_cancel(&job_id);
+
+        let _ = state.update(Message::RipCompleted {
+            job_id,
+            result: Ok(RipTermination::Cancelled { forced: false }),
+        });
+
+        assert_eq!(state.notifications.len(), 1);
+        assert!(state.error.is_none());
+        assert!(matches!(
+            state.queue.selected_status(),
+            Some(JobStatus::Cancelled)
+        ));
     }
 }

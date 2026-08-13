@@ -24,6 +24,8 @@ use crate::{
 ///   acquire its concurrency permit.
 /// - [`OutputInspection`](Self::OutputInspection): An output path could not
 ///   be inspected while applying the collision policy.
+/// - [`PartialOutputCleanup`](Self::PartialOutputCleanup): A cancelled rip's
+///   incomplete output could not be removed.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Wraps a failure while detecting or running a required dependency.
@@ -47,6 +49,13 @@ pub enum Error {
     /// Adds the requested output path to an I/O failure from collision checks.
     #[error("could not inspect output path `{path}`: {source}")]
     OutputInspection {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// Adds the partial output path to a cancellation cleanup failure.
+    #[error("ripping was cancelled, but partial output `{path}` could not be removed: {source}")]
+    PartialOutputCleanup {
         path: PathBuf,
         #[source]
         source: std::io::Error,
@@ -76,6 +85,19 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "could not inspect output path `/music/song.mp3`: denied"
+        );
+    }
+
+    #[test]
+    fn partial_output_errors_explain_that_cancellation_succeeded() {
+        let error = Error::PartialOutputCleanup {
+            path: PathBuf::from("/music/song.mp3"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "ripping was cancelled, but partial output `/music/song.mp3` could not be removed: denied"
         );
     }
 }

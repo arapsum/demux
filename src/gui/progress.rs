@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use iced::font::Weight;
-use iced::widget::{column, container, progress_bar, row, space, text};
+use iced::widget::{button, column, container, progress_bar, row, space, text};
 use iced::{Element, Fill, Font, Padding};
 
 use crate::{
@@ -9,7 +9,26 @@ use crate::{
     model::job::{JobId, RipProgress},
 };
 
-use super::style::{DANGER, SUCCESS, TEXT_MUTED, inset_panel, panel};
+use super::{
+    icon,
+    style::{
+        DANGER, DANGER_TEXT, ICON_MUTED, SUCCESS, TEXT_MUTED, WARNING, destructive_action,
+        inset_panel, panel,
+    },
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Action {
+    None,
+    CancelRequested(JobId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalStatus {
+    Completed,
+    Cancelled,
+    Failed,
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -24,14 +43,17 @@ pub enum Message {
     },
     Finished {
         job_id: JobId,
-        succeeded: bool,
+        status: TerminalStatus,
     },
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
     Running,
+    Cancelling,
     Completed,
+    Cancelled,
     Failed,
 }
 
@@ -55,7 +77,7 @@ impl Progress {
         Self { active: None }
     }
 
-    pub(crate) fn update(&mut self, message: Message) {
+    pub(crate) fn update(&mut self, message: Message) -> Action {
         match message {
             Message::Started {
                 job_id,
@@ -70,6 +92,7 @@ impl Progress {
                     progress,
                     status: Status::Running,
                 });
+                Action::None
             }
             Message::Advanced { job_id, progress } => {
                 let Some(active) = self
@@ -77,7 +100,7 @@ impl Progress {
                     .as_mut()
                     .filter(|active| active.job_id == job_id && active.status == Status::Running)
                 else {
-                    return;
+                    return Action::None;
                 };
                 active.progress.update(
                     progress.elapsed,
@@ -85,22 +108,47 @@ impl Progress {
                     progress.bitrate_kbps,
                     progress.output_size,
                 );
+                Action::None
             }
-            Message::Finished { job_id, succeeded } => {
+            Message::Finished { job_id, status } => {
                 let Some(active) = self
                     .active
                     .as_mut()
                     .filter(|active| active.job_id == job_id)
                 else {
-                    return;
+                    return Action::None;
                 };
-                if succeeded {
-                    active.progress.finish();
-                    active.status = Status::Completed;
-                } else {
-                    active.status = Status::Failed;
-                }
+                active.status = match status {
+                    TerminalStatus::Completed => {
+                        active.progress.finish();
+                        Status::Completed
+                    }
+                    TerminalStatus::Cancelled => Status::Cancelled,
+                    TerminalStatus::Failed => Status::Failed,
+                };
+                Action::None
             }
+            Message::Cancel => {
+                let Some(active) = self
+                    .active
+                    .as_mut()
+                    .filter(|active| active.status == Status::Running)
+                else {
+                    return Action::None;
+                };
+                active.status = Status::Cancelling;
+                Action::CancelRequested(active.job_id.clone())
+            }
+        }
+    }
+
+    pub(crate) fn mark_cancelling(&mut self, job_id: &JobId) {
+        if let Some(active) = self
+            .active
+            .as_mut()
+            .filter(|active| &active.job_id == job_id && active.status == Status::Running)
+        {
+            active.status = Status::Cancelling;
         }
     }
 
@@ -140,12 +188,16 @@ impl Progress {
 
         let status_label = match active.status {
             Status::Running => "Ripping",
+            Status::Cancelling => "Cancelling",
             Status::Completed => "Completed",
+            Status::Cancelled => "Cancelled",
             Status::Failed => "Failed",
         };
         let status_color = match active.status {
             Status::Running => super::style::ACCENT,
+            Status::Cancelling => WARNING,
             Status::Completed => SUCCESS,
+            Status::Cancelled => TEXT_MUTED,
             Status::Failed => DANGER,
         };
         let duration_known = !active.progress.duration.is_zero();
@@ -197,6 +249,25 @@ impl Progress {
         ]
         .spacing(18);
 
+        let cancel: Element<'_, Message> = match active.status {
+            Status::Running | Status::Cancelling => {
+                let enabled = active.status == Status::Running;
+                button(
+                    row![
+                        icon::stop(if enabled { DANGER_TEXT } else { ICON_MUTED }),
+                        text(if enabled { "Cancel" } else { "Cancelling…" }).size(12),
+                    ]
+                    .spacing(7)
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding(Padding::from([7, 12]))
+                .style(destructive_action)
+                .on_press_maybe(enabled.then_some(Message::Cancel))
+                .into()
+            }
+            Status::Completed | Status::Cancelled | Status::Failed => space::horizontal().into(),
+        };
+
         container(
             column![
                 row![
@@ -233,9 +304,14 @@ impl Progress {
                 .spacing(12)
                 .align_y(iced::Alignment::Center),
                 metrics,
-                text(format!("Audio: {} · MP3", active.encoder))
-                    .size(11)
-                    .color(TEXT_MUTED),
+                row![
+                    text(format!("Audio: {} · MP3", active.encoder))
+                        .size(11)
+                        .color(TEXT_MUTED),
+                    space::horizontal(),
+                    cancel,
+                ]
+                .align_y(iced::Alignment::Center),
             ]
             .spacing(9),
         )
@@ -323,7 +399,7 @@ mod tests {
         });
         state.update(Message::Finished {
             job_id: JobId::new(1),
-            succeeded: true,
+            status: TerminalStatus::Completed,
         });
 
         let active = state.active.as_ref().unwrap();
@@ -335,5 +411,24 @@ mod tests {
     fn formatters_label_measurements_compactly() {
         assert_eq!(format_duration(Duration::from_secs(3_661)), "01:01:01");
         assert_eq!(format_size(1_572_864), "1.5 MB");
+    }
+
+    #[test]
+    fn cancel_action_is_emitted_once_and_enters_cancelling_state() {
+        let mut state = Progress::new();
+        let _ = state.update(started());
+
+        assert_eq!(
+            state.update(Message::Cancel),
+            Action::CancelRequested(JobId::new(1))
+        );
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Cancelling);
+        assert_eq!(state.update(Message::Cancel), Action::None);
+
+        let _ = state.update(Message::Finished {
+            job_id: JobId::new(1),
+            status: TerminalStatus::Cancelled,
+        });
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Cancelled);
     }
 }

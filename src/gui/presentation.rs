@@ -61,6 +61,10 @@ impl From<&JobStatus> for StatusPresentation {
                 label: "Ripping…",
                 color: ACCENT,
             },
+            JobStatus::Cancelling => Self {
+                label: "Cancelling…",
+                color: WARNING,
+            },
             JobStatus::Completed => Self {
                 label: "Completed",
                 color: SUCCESS,

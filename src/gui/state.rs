@@ -1,4 +1,7 @@
-use crate::ffmpeg::DependencyState;
+use crate::{
+    ffmpeg::{CancellationHandle, DependencyState},
+    model::job::JobId,
+};
 
 use super::output_settings::OutputSettings;
 use super::progress::Progress;
@@ -13,6 +16,8 @@ pub struct Demux {
     pub(crate) progress: Progress,
     pub(crate) error: Option<String>,
     pub(crate) notifications: Notifications,
+    pub(crate) active_cancellation: Option<(JobId, CancellationHandle)>,
+    pub(crate) exit_after_queue: bool,
 }
 
 impl Default for Demux {
@@ -24,6 +29,8 @@ impl Default for Demux {
             progress: Progress::new(),
             error: None,
             notifications: Notifications::new(),
+            active_cancellation: None,
+            exit_after_queue: false,
         }
     }
 }

@@ -52,6 +52,7 @@ pub fn run() -> iced::Result {
         .window(window::Settings {
             size: Size::new(1_180.0, 760.0),
             min_size: Some(Size::new(860.0, 600.0)),
+            exit_on_close_request: false,
             ..window::Settings::default()
         })
         .run()
@@ -78,6 +79,7 @@ fn window_event(event: window::Event) -> Option<Message> {
             tracing::info!(path = %path.display(), "media path dropped into queue");
             Some(Message::Queue(queue::Message::PathsDropped(vec![path])))
         }
+        window::Event::CloseRequested => Some(Message::CloseRequested),
         _ => None,
     }
 }
@@ -129,6 +131,14 @@ mod tests {
         assert!(matches!(
             left,
             Some(Message::Queue(queue::Message::DropHoverChanged(false)))
+        ));
+    }
+
+    #[test]
+    fn close_requests_are_forwarded_to_the_application_shutdown_path() {
+        assert!(matches!(
+            window_event(window::Event::CloseRequested),
+            Some(Message::CloseRequested)
         ));
     }
 }

@@ -15,6 +15,7 @@ use std::time::Duration;
 use super::message::Message as AppMessage;
 
 const SUCCESS_DURATION: Duration = Duration::from_secs(6);
+const WARNING_DURATION: Duration = Duration::from_secs(8);
 const FAILURE_DURATION: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone)]
@@ -34,6 +35,7 @@ impl ToastId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToastStatus {
     Success,
+    Warning,
     Danger,
 }
 
@@ -84,6 +86,14 @@ impl Notifications {
         self.push(Toast::danger(title, body), FAILURE_DURATION)
     }
 
+    pub(crate) fn warning(
+        &mut self,
+        title: impl Into<String>,
+        body: impl Into<String>,
+    ) -> iced::Task<Message> {
+        self.push(Toast::warning(title, body), WARNING_DURATION)
+    }
+
     fn push(&mut self, toast: Toast, duration: Duration) -> iced::Task<Message> {
         let id = ToastId::new(self.next_id);
         self.next_id += 1;
@@ -119,6 +129,10 @@ impl Toast {
         Self::new(title, body, ToastStatus::Danger)
     }
 
+    pub(crate) fn warning(title: impl Into<String>, body: impl Into<String>) -> Self {
+        Self::new(title, body, ToastStatus::Warning)
+    }
+
     fn new(title: impl Into<String>, body: impl Into<String>, status: ToastStatus) -> Self {
         Self {
             id: ToastId::new(0),
@@ -151,10 +165,12 @@ impl<'a> Manager<'a> {
 fn toast_view(toast: &Toast) -> Element<'_, AppMessage> {
     let status_color = match toast.status {
         ToastStatus::Success => Color::from_rgb(0.35, 0.78, 0.57),
+        ToastStatus::Warning => Color::from_rgb(0.96, 0.68, 0.30),
         ToastStatus::Danger => Color::from_rgb(0.94, 0.39, 0.42),
     };
     let style = match toast.status {
         ToastStatus::Success => success_style,
+        ToastStatus::Warning => warning_style,
         ToastStatus::Danger => danger_style,
     };
 
@@ -203,6 +219,16 @@ fn danger_style(_theme: &Theme) -> container::Style {
         .background(Color::from_rgb(0.16, 0.075, 0.085))
         .border(Border {
             color: Color::from_rgb(0.38, 0.14, 0.16),
+            width: 1.0,
+            radius: 12.0.into(),
+        })
+}
+
+fn warning_style(_theme: &Theme) -> container::Style {
+    container::Style::default()
+        .background(Color::from_rgb(0.14, 0.105, 0.055))
+        .border(Border {
+            color: Color::from_rgb(0.42, 0.29, 0.10),
             width: 1.0,
             radius: 12.0.into(),
         })
