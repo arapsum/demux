@@ -218,6 +218,12 @@ the same managed shutdown path.
 Purpose: make the visible output settings real while retaining MP3 as the first
 supported format.
 
+**Status: complete.** Demux exposes a typed MP3 format selector plus validated
+128–320 kbps bitrate, 44.1/48 kHz sample-rate, and mono/stereo controls. Each
+job keeps an immutable settings snapshot once queue execution starts, every
+selectable combination maps to tested FFmpeg arguments, and valid defaults are
+restored from the user's platform configuration directory on restart.
+
 ### Engine first
 
 - Model MP3 bitrate, sample rate, and channel mode as validated encoding

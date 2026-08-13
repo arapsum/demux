@@ -77,7 +77,7 @@ Demux is a compact native work surface where media state stays legible while
 external tools run. Its character comes from calm dark layering, precise
 status language, and one restrained violet action signal—not ornamental
 chrome. Familiar desktop controls keep attention on the file, destination,
-and outcome.
+encoding choices, and outcome.
 
 **Key Characteristics:**
 
@@ -113,10 +113,10 @@ controls, and 12–13px muted text for metadata and guidance.
 
 The desktop shell opens at 1180×760 with a minimum of 860×600. A compact
 identity header sits over a 70/30 work/settings split. The left side owns file
-selection, queue information, metadata, and errors. The right side owns fixed
-format, destination, selected status, dependency status, and the primary
-action anchored near the bottom. Outer padding is 24–26px; major gaps are
-18px; grouped controls use 7–14px.
+selection, queue information, metadata, and errors. The right side owns MP3
+encoding defaults, destination, selected status, dependency status, and the
+primary action anchored near the bottom. Outer padding is 24–26px; major gaps
+are 18px; grouped controls use 7–14px.
 
 ## Elevation & Depth
 
@@ -149,16 +149,28 @@ Text fields use the inset surface with 12px padding. Local filesystem paths
 pair with a labeled native Browse action. Inputs that would have no effect
 during or after extraction are disabled.
 
+### Output Settings
+
+The output panel uses compact native selectors for the supported format,
+bitrate, sample rate, and channel mode. Bitrate and sample rate share one row;
+channels and destination retain full width for scanability. Selectors use the
+same inset surface and 12px geometry as path fields, with violet reserved for
+hover, focus, or open state. During queue execution, values become quiet
+read-only fields so the visible settings match the active job snapshot. The
+controls area scrolls at the minimum window height while status and Start remain
+reachable.
+
 ### Job Row
 
 The queue is one compact data table rather than a stack of nested cards. Its
-columns show position, filename, duration, textual status, fixed MP3 output,
-and source size. Rows share quiet horizontal separators so values remain easy
-to compare down each column. The active selection receives a restrained
-violet-neutral background, and a failed row carries its actionable process
-error beneath the filename. Unknown probe values use an em dash; they never
-fall back to zero. The footer reports the number of jobs and total source size
-without presenting it as an estimated output size.
+columns show position, filename, duration, textual status, MP3 output settings,
+and source size. Each output value includes the job's effective MP3 bitrate
+snapshot instead of the latest default. Rows share quiet horizontal separators
+so values remain easy to compare down each column. The active selection
+receives a restrained violet-neutral background, and a failed row carries its
+actionable process error beneath the filename. Unknown probe values use an em
+dash; they never fall back to zero. The footer reports the number of jobs and
+total source size without presenting it as an estimated output size.
 
 ### Queue Execution
 
@@ -211,7 +223,7 @@ remain for ten seconds. Every notice also offers an explicit Dismiss action.
 
 ### Don't:
 
-- **Don't** add cancellation, pause, or log controls before their
+- **Don't** add pause or log controls before their
   engine behavior exists.
 - **Don't** use violet for inactive decoration.
 - **Don't** render missing metadata as zero.

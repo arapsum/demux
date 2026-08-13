@@ -4,8 +4,9 @@ Demux is a native Rust desktop utility for extracting audio from video files wit
 
 > **Status:** early development. Demux now has a functional first Iced shell for
 > selecting and probing multiple videos, then extracting every eligible job
-> sequentially with live progress and estimates. Safe queue cancellation is
-> implemented; the complete reference interface remains planned.
+> sequentially with configurable MP3 settings, live progress, and estimates.
+> Safe queue cancellation is implemented; the complete reference interface
+> remains planned.
 
 ## Product direction
 
@@ -23,8 +24,8 @@ The intended workflow is:
 
 - Drag-and-drop support for common video formats such as MP4, MKV, MOV, AVI, WMV, FLV, and MPEG.
 - A multi-file queue with queued, active, completed, and failed states.
-- Output formats including MP3, WAV, FLAC, and AAC/M4A.
-- Configurable bitrate, sample rate, channels, and output location.
+- MP3 output with persisted bitrate, sample-rate, and channel defaults plus
+  output-location controls; additional formats can follow the validated model.
 - Per-job progress with percentage, elapsed time, remaining time, speed, and audio properties.
 - Start, pause where supported, and cancel controls.
 - A readable FFmpeg log with options to clear or save it.
@@ -42,10 +43,11 @@ The current GUI slice supports multi-file and folder intake, asynchronous media
 probing, a shared output folder, and sequential MP3 extraction with per-row
 terminal states, live process measurements, and a queue summary. Cancellation
 stops the active FFmpeg process and remaining queue, removes partial output, and
-also protects application shutdown. Metadata editing, artwork extraction,
-normalization, presets, parallel ripping, and advanced stream selection can
-follow once that pipeline is solid. Pause is also treated as a later,
-platform-dependent refinement.
+also protects application shutdown. MP3 jobs snapshot a validated bitrate,
+sample rate, and channel mode before execution, while user defaults persist
+between launches. Metadata editing, artwork extraction, normalization, presets,
+parallel ripping, and advanced stream selection can follow once that pipeline
+is solid. Pause is also treated as a later, platform-dependent refinement.
 
 ## Architecture
 
