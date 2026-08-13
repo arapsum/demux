@@ -17,7 +17,9 @@ path = "src/lib.rs"
 # X11/XWayland until upstream implements them so Demux's intake contract works.
 iced = { version = "0.14.0", default-features = false, features = ["advanced", "canvas", "crisp", "linux-theme-detection", "thread-pool", "tiny-skia", "tokio", "web-colors", "wgpu", "x11"] }
 lucide-icons = { version = "1.31.0", features = ["iced"] }
-rfd = "0.17.2"
+# Demux runs Iced through X11 on Linux. The portal backend provides native
+# pickers without pulling rfd's unused system-linked Wayland client.
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.20"
