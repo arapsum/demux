@@ -20,7 +20,7 @@ Demux turns video-to-audio extraction into a visible, understandable workflow: c
 
 ## Operating Context
 
-Demux is a cross-platform desktop utility used with local media files and locally installed FFmpeg and FFprobe executables. The first GUI slice supports one selected file and MP3 output.
+Demux is a cross-platform desktop utility used with local media files and locally installed FFmpeg and FFprobe executables. The current GUI supports a sequential queue and fixed MP3 output.
 
 ## Capabilities and Constraints
 
@@ -33,8 +33,9 @@ Demux is a cross-platform desktop utility used with local media files and locall
   existing outputs with numbered filenames, and report queue-wide outcomes.
 - Stream live elapsed time, speed, bitrate, output size, percentage, and
   remaining-time estimates from machine-readable FFmpeg progress records.
-- Cancellation, artwork, metadata embedding, normalization, and pause are later
-  milestones.
+- Cancel the full queue through cooperative and bounded forced FFmpeg shutdown,
+  remove partial output, and reuse that recovery path when closing the app.
+- Artwork, metadata embedding, normalization, and pause are later milestones.
 
 ## Brand Commitments
 

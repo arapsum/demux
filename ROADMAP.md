@@ -185,6 +185,12 @@ estimates while labelling unavailable measurements as unknown.
 
 Purpose: give users a safe way to stop work before attempting pause/resume.
 
+**Status: complete.** Cancelling stops the full queue, asks FFmpeg to quit
+cooperatively, and force-terminates it after a bounded grace period. Demux waits
+for process shutdown and partial-output cleanup before restoring controls,
+reports cleanup failures persistently, and routes window-close requests through
+the same managed shutdown path.
+
 ### Engine first
 
 - Retain a controllable child-process handle for the active extraction.
