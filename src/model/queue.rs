@@ -1,4 +1,7 @@
-use super::job::{JobId, RipJob};
+use super::{
+    encoding::RipOptions,
+    job::{JobId, RipJob},
+};
 
 /// Allocates job identifiers and retains the latest submitted job.
 #[derive(Debug)]
@@ -15,10 +18,10 @@ impl JobQueue {
         }
     }
 
-    pub(crate) fn create(&mut self, input: String, output: String) -> RipJob {
+    pub(crate) fn create(&mut self, input: String, output: String, options: RipOptions) -> RipJob {
         let id = JobId::new(self.next_id);
         self.next_id += 1;
-        RipJob::new(id, input, output)
+        RipJob::with_options(id, input, output, options)
     }
 
     pub(crate) fn finish(&mut self, job: RipJob) {
@@ -37,8 +40,16 @@ mod tests {
     #[test]
     fn allocates_unique_ids_and_retains_the_latest_job() {
         let mut queue = JobQueue::new();
-        let first = queue.create("first.mp4".into(), "first.mp3".into());
-        let second = queue.create("second.mp4".into(), "second.mp3".into());
+        let first = queue.create(
+            "first.mp4".into(),
+            "first.mp3".into(),
+            RipOptions::default(),
+        );
+        let second = queue.create(
+            "second.mp4".into(),
+            "second.mp3".into(),
+            RipOptions::default(),
+        );
 
         assert_eq!(first.id, JobId::new(1));
         assert_eq!(second.id, JobId::new(2));

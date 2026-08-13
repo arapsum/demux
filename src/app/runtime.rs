@@ -4,13 +4,13 @@ use tracing::{Instrument, info_span};
 
 use crate::{
     Error, Result,
-    app::output,
+    app::{output, preferences},
     ffmpeg::{
         self, CancellationSignal, Dependencies, FfmpegAudioRipper, FfmpegProgress, RipRequest,
         RipTermination, TokioProcessRunner,
     },
     ffprobe,
-    model::{job::JobId, media::MediaInfo},
+    model::{encoding::RipOptions, job::JobId, media::MediaInfo},
 };
 
 pub const PROBE_CONCURRENCY: usize = 4;
@@ -29,6 +29,18 @@ pub async fn probe_bounded(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
 /// Runs production dependency detection away from the GUI runtime thread.
 pub async fn check_dependencies() -> Result<Dependencies> {
     Ok(tokio::task::spawn_blocking(ffmpeg::detect_dependencies).await??)
+}
+
+pub async fn load_preferences() -> Result<RipOptions> {
+    preferences::load().await
+}
+
+pub fn next_preferences_revision() -> u64 {
+    preferences::next_revision()
+}
+
+pub async fn save_preferences(options: RipOptions, revision: u64) -> Result<()> {
+    preferences::save(options, revision).await
 }
 
 /// Probes one media input through the production FFprobe adapter.

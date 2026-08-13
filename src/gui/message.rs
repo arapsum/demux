@@ -1,6 +1,6 @@
 use crate::{
     ffmpeg::{Dependencies, FfmpegProgress, RipTermination},
-    model::job::JobId,
+    model::{encoding::RipOptions, job::JobId},
 };
 
 use super::TaskResult;
@@ -9,6 +9,8 @@ use super::{output_settings, progress, queue, toast};
 #[derive(Debug, Clone)]
 pub enum Message {
     DependenciesChecked(TaskResult<Dependencies>),
+    PreferencesLoaded(TaskResult<RipOptions>),
+    PreferencesSaved(TaskResult<()>),
     Queue(queue::Message),
     OutputSettings(output_settings::Message),
     Progress(progress::Message),

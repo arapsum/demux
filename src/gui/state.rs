@@ -42,6 +42,10 @@ impl Demux {
             .set_output_paths(|input| settings.output_path(input));
     }
 
+    pub(crate) fn refresh_encoding_options(&mut self) {
+        self.queue.set_options(self.output_settings.options());
+    }
+
     pub(crate) fn can_start(&self) -> bool {
         matches!(self.dependency_state, DependencyState::Ready(_))
             && self.queue.can_start()

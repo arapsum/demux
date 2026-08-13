@@ -1,4 +1,4 @@
-use super::media::MediaInfo;
+use super::{encoding::RipOptions, media::MediaInfo};
 
 use std::time::Duration;
 
@@ -39,6 +39,7 @@ pub struct RipJob {
     pub id: JobId,
     pub input: String,
     pub output: String,
+    pub options: RipOptions,
     pub input_size: Option<u64>,
     pub status: JobStatus,
     pub metadata: Option<MediaInfo>,
@@ -59,10 +60,16 @@ impl RipJob {
     /// A new job with no metadata and zeroed progress.
     #[must_use]
     pub fn new(id: JobId, input: String, output: String) -> Self {
+        Self::with_options(id, input, output, RipOptions::default())
+    }
+
+    #[must_use]
+    pub fn with_options(id: JobId, input: String, output: String, options: RipOptions) -> Self {
         Self {
             id,
             input,
             output,
+            options,
             input_size: None,
             status: JobStatus::Pending,
             metadata: None,
@@ -97,6 +104,10 @@ impl RipJob {
 
     pub(crate) fn queue(&mut self) {
         self.status = JobStatus::Queued;
+    }
+
+    pub(crate) fn set_options(&mut self, options: RipOptions) {
+        self.options = options;
     }
 
     pub(crate) fn skip(&mut self, message: String) {
@@ -250,6 +261,7 @@ mod tests {
         assert_eq!(job.status, JobStatus::Pending);
         assert!(job.metadata.is_none());
         assert_eq!(job.progress, RipProgress::default());
+        assert_eq!(job.options, RipOptions::default());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use iced::widget::{button, container};
+use iced::widget::{button, container, pick_list};
 use iced::{Background, Border, Color, Shadow, Theme};
 
 pub(crate) const TEXT_MUTED: Color = Color::from_rgb(0.62, 0.64, 0.70);
@@ -75,6 +75,25 @@ pub(crate) fn error_panel(_theme: &Theme) -> container::Style {
             width: 1.0,
             radius: 12.0.into(),
         })
+}
+
+pub(crate) fn settings_select(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
+    let border_color = match status {
+        pick_list::Status::Active => Color::from_rgb(0.19, 0.20, 0.24),
+        pick_list::Status::Hovered | pick_list::Status::Opened { .. } => ACCENT,
+    };
+
+    pick_list::Style {
+        text_color: BUTTON_TEXT,
+        placeholder_color: TEXT_MUTED,
+        handle_color: TEXT_MUTED,
+        background: Background::Color(INSET_BACKGROUND),
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+    }
 }
 
 pub(crate) fn primary_action(_theme: &Theme, status: button::Status) -> button::Style {

@@ -11,6 +11,7 @@ use crate::{
     },
     ffmpeg::{FfmpegProgress, RipRequest, RipTermination},
     model::{
+        encoding::RipOptions,
         job::{JobId, JobStatus, RipJob, RipProgress},
         media::MediaInfo,
     },
@@ -262,7 +263,11 @@ impl Queue {
         }
     }
 
-    pub(crate) fn enqueue_many(&mut self, paths: Vec<(AcceptedInput, PathBuf)>) -> Action {
+    pub(crate) fn enqueue_many(
+        &mut self,
+        paths: Vec<(AcceptedInput, PathBuf)>,
+        options: RipOptions,
+    ) -> Action {
         let mut probes = Vec::with_capacity(paths.len());
         for (input, output) in paths {
             if self
@@ -278,10 +283,11 @@ impl Queue {
             }
             let job_id = JobId::new(self.next_job_id);
             self.next_job_id += 1;
-            let mut job = RipJob::new(
+            let mut job = RipJob::with_options(
                 job_id.clone(),
                 input.path.to_string_lossy().into_owned(),
                 output.to_string_lossy().into_owned(),
+                options,
             );
             job.input_size = Some(input.size);
             job.start_probing();
@@ -319,6 +325,17 @@ impl Queue {
                 JobStatus::Queued | JobStatus::Ripping | JobStatus::Completed
             ) {
                 job.output = derive(Path::new(&job.input)).to_string_lossy().into_owned();
+            }
+        }
+    }
+
+    pub(crate) fn set_options(&mut self, options: RipOptions) {
+        for job in &mut self.jobs {
+            if matches!(
+                job.status,
+                JobStatus::Pending | JobStatus::Probing | JobStatus::Ready
+            ) {
+                job.set_options(options);
             }
         }
     }
@@ -409,7 +426,7 @@ impl Queue {
                 job.output = output.to_string_lossy().into_owned();
                 Action::RipRequested {
                     job_id: job_id.clone(),
-                    request: RipRequest::new(job.input.clone(), output),
+                    request: RipRequest::with_options(job.input.clone(), output, job.options),
                     initial_progress: job.progress.clone(),
                 }
             }
@@ -971,7 +988,7 @@ async fn pick_video_folder() -> Option<PathBuf> {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use crate::ffmpeg::RipOutcome;
+    use crate::ffmpeg::{ChannelMode, Mp3Bitrate, RipOutcome, SampleRate};
     use crate::model::media::AudioMetadata;
 
     use super::*;
@@ -1001,13 +1018,16 @@ mod tests {
     fn enqueue(queue: &mut Queue, name: &str) -> JobId {
         let input = PathBuf::from(format!("/videos/{name}.mp4"));
         let output = PathBuf::from(format!("/music/{name}.mp3"));
-        let _ = queue.enqueue_many(vec![(
-            AcceptedInput {
-                path: input,
-                size: 42,
-            },
-            output,
-        )]);
+        let _ = queue.enqueue_many(
+            vec![(
+                AcceptedInput {
+                    path: input,
+                    size: 42,
+                },
+                output,
+            )],
+            RipOptions::default(),
+        );
         queue.jobs.last().unwrap().id.clone()
     }
 
@@ -1214,6 +1234,33 @@ mod tests {
     }
 
     #[test]
+    fn queue_start_freezes_each_jobs_encoding_snapshot() {
+        let mut queue = Queue::new();
+        let job_id = enqueue(&mut queue, "example");
+        let options = RipOptions {
+            bitrate: Mp3Bitrate::Kbps320,
+            sample_rate: SampleRate::Hz48000,
+            channels: ChannelMode::Mono,
+            ..RipOptions::default()
+        };
+        queue.set_options(options);
+        let _ = queue.update(Message::ProbeCompleted {
+            job_id: job_id.clone(),
+            result: Ok(metadata()),
+        });
+        let _ = queue.start_queue();
+
+        queue.set_options(RipOptions::default());
+        let action = queue.output_resolved(&job_id, Ok(PathBuf::from("/music/example.mp3")));
+
+        assert!(matches!(
+            action,
+            Action::RipRequested { request, .. } if request.options == options
+        ));
+        assert_eq!(queue.jobs[0].options, options);
+    }
+
+    #[test]
     fn cleanup_failure_is_preserved_in_the_terminal_queue_action() {
         let mut queue = Queue::new();
         let job_id = enqueue(&mut queue, "example");
@@ -1330,7 +1377,10 @@ mod tests {
             size: 42,
         };
 
-        let action = queue.enqueue_many(vec![(input, PathBuf::from("/music/example.mp3"))]);
+        let action = queue.enqueue_many(
+            vec![(input, PathBuf::from("/music/example.mp3"))],
+            RipOptions::default(),
+        );
 
         assert_eq!(action, Action::ProbeRequested(Vec::new()));
         assert_eq!(queue.jobs.len(), 1);

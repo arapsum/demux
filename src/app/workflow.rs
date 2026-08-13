@@ -93,13 +93,15 @@ impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
     ) -> JobId {
         let input = request.input.to_string_lossy().into_owned();
         let output = request.output.to_string_lossy().into_owned();
-        let mut job = app.create_job(input, output);
+        let mut job = app.create_job(input, output, request.options);
 
         let span = info_span!(
             "rip_job",
             job_id = job.id.0,
-            encoder = %request.options.encoder,
-            bitrate_kbps = request.options.bitrate_kbps,
+            encoder = request.options.encoder(),
+            bitrate_kbps = request.options.bitrate.kbps(),
+            sample_rate_hz = request.options.sample_rate.hz(),
+            channels = request.options.channels.channels(),
         );
 
         let id = job.id.clone();

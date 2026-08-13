@@ -1,6 +1,7 @@
 mod cli;
 pub(crate) mod intake;
 mod output;
+pub(crate) mod preferences;
 pub(crate) mod queue_runner;
 pub(crate) mod runtime;
 mod services;
@@ -8,7 +9,7 @@ mod workflow;
 
 use crate::{
     ffmpeg::DependencyState,
-    model::{job::RipJob, queue::JobQueue},
+    model::{encoding::RipOptions, job::RipJob, queue::JobQueue},
 };
 
 pub use self::{
@@ -51,8 +52,13 @@ impl App {
         self.dependency_state = state;
     }
 
-    pub(crate) fn create_job(&mut self, input: String, output: String) -> RipJob {
-        self.jobs.create(input, output)
+    pub(crate) fn create_job(
+        &mut self,
+        input: String,
+        output: String,
+        options: RipOptions,
+    ) -> RipJob {
+        self.jobs.create(input, output, options)
     }
 
     pub(crate) fn finish_job(&mut self, job: RipJob) {

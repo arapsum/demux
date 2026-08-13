@@ -89,7 +89,7 @@ pub(crate) struct JobPresentation {
     pub(crate) id: JobId,
     pub(crate) filename: String,
     pub(crate) duration: String,
-    pub(crate) output_details: &'static str,
+    pub(crate) output_details: String,
     pub(crate) size: String,
     pub(crate) status: StatusPresentation,
     pub(crate) terminal_detail: Option<String>,
@@ -111,7 +111,11 @@ impl From<&RipJob> for JobPresentation {
             id: job.id.clone(),
             filename,
             duration,
-            output_details: "MP3 (192 kbps)",
+            output_details: format!(
+                "{} ({} kbps)",
+                job.options.format,
+                job.options.bitrate.kbps()
+            ),
             size: job.input_size.map_or_else(|| "—".into(), format_size),
             status: StatusPresentation::from(&job.status),
             terminal_detail: match &job.status {
@@ -150,6 +154,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::model::{
+        encoding::{Mp3Bitrate, RipOptions},
         job::JobId,
         media::{AudioMetadata, MediaInfo},
     };
@@ -178,12 +183,16 @@ mod tests {
                 language: None,
             },
         });
+        job.set_options(RipOptions {
+            bitrate: Mp3Bitrate::Kbps320,
+            ..RipOptions::default()
+        });
 
         let presentation = JobPresentation::from(&job);
 
         assert_eq!(presentation.filename, "example.mp4");
         assert_eq!(presentation.duration, "01:01:01");
-        assert_eq!(presentation.output_details, "MP3 (192 kbps)");
+        assert_eq!(presentation.output_details, "MP3 (320 kbps)");
         assert_eq!(presentation.status.label, "Ready");
     }
 }

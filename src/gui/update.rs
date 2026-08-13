@@ -13,9 +13,14 @@ impl Demux {
     pub fn new() -> (Self, Task<Message>) {
         (
             Self::default(),
-            Task::perform(runtime::check_dependencies(), |result| {
-                Message::DependenciesChecked(share_error(result))
-            }),
+            Task::batch([
+                Task::perform(runtime::check_dependencies(), |result| {
+                    Message::DependenciesChecked(share_error(result))
+                }),
+                Task::perform(runtime::load_preferences(), |result| {
+                    Message::PreferencesLoaded(share_error(result))
+                }),
+            ]),
         )
     }
 
@@ -38,12 +43,55 @@ impl Demux {
                 }
                 Task::none()
             }
+            Message::PreferencesLoaded(result) => {
+                match result {
+                    Ok(options) => {
+                        if self.output_settings.apply_loaded_defaults(options) {
+                            self.refresh_encoding_options();
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(error = %error, "could not restore encoding defaults");
+                        let message = error.to_string();
+                        self.error = Some(message.clone());
+                        return self
+                            .notifications
+                            .failure("Settings were not restored", message)
+                            .map(Message::Notifications);
+                    }
+                }
+                Task::none()
+            }
+            Message::PreferencesSaved(result) => {
+                if let Err(error) = result {
+                    tracing::error!(error = %error, "could not persist encoding defaults");
+                    let message = error.to_string();
+                    self.error = Some(message.clone());
+                    return self
+                        .notifications
+                        .failure("Settings were not saved", message)
+                        .map(Message::Notifications);
+                }
+                Task::none()
+            }
             Message::Queue(message) => self.update_queue(message),
             Message::OutputSettings(message) => {
-                let (action, task) = self.output_settings.update(message);
+                let (action, task) = self
+                    .output_settings
+                    .update(message, self.queue.is_running());
                 match action {
                     output_settings::Action::None => {}
                     output_settings::Action::OutputChanged => self.refresh_output_path(),
+                    output_settings::Action::EncodingChanged(options) => {
+                        self.refresh_encoding_options();
+                        let revision = runtime::next_preferences_revision();
+                        return Task::batch([
+                            task.map(Message::OutputSettings),
+                            Task::perform(runtime::save_preferences(options, revision), |result| {
+                                Message::PreferencesSaved(share_error(result))
+                            }),
+                        ]);
+                    }
                     output_settings::Action::StartRipping => {
                         return self.update_queue(queue::Message::StartQueue);
                     }
@@ -127,7 +175,9 @@ impl Demux {
                         (input, output)
                     })
                     .collect();
-                let action = self.queue.enqueue_many(paths);
+                let action = self
+                    .queue
+                    .enqueue_many(paths, self.output_settings.options());
                 self.handle_queue_action(action)
             }
             queue::Action::ProbeRequested(_)
@@ -293,8 +343,11 @@ mod tests {
 
     use crate::{
         ffmpeg::{Dependencies, RipOutcome, RipTermination},
-        model::job::{JobId, JobStatus},
         model::media::{AudioMetadata, MediaInfo},
+        model::{
+            encoding::{ChannelMode, Mp3Bitrate, SampleRate},
+            job::{JobId, JobStatus},
+        },
     };
 
     use super::*;
@@ -331,13 +384,16 @@ mod tests {
         let input = PathBuf::from(input);
         state.output_settings.set_default_from_input(&input);
         let output = state.output_settings.output_path(&input);
-        let _ = state.queue.enqueue_many(vec![(
-            crate::app::intake::AcceptedInput {
-                path: input,
-                size: 42,
-            },
-            output,
-        )]);
+        let _ = state.queue.enqueue_many(
+            vec![(
+                crate::app::intake::AcceptedInput {
+                    path: input,
+                    size: 42,
+                },
+                output,
+            )],
+            state.output_settings.options(),
+        );
         state.queue.selected().unwrap().id.clone()
     }
 
@@ -460,6 +516,31 @@ mod tests {
         assert_eq!(job.input, "/videos/example.mp4");
         assert_eq!(job.output, "/videos/example.mp3");
         assert!(matches!(job.status, JobStatus::Probing));
+    }
+
+    #[test]
+    fn encoding_changes_update_every_editable_job_snapshot() {
+        let mut state = Demux::default();
+        let job_id = enqueue(&mut state, "/videos/example.mp4");
+        let _ = state.update(Message::Queue(queue::Message::ProbeCompleted {
+            job_id,
+            result: Ok(metadata()),
+        }));
+
+        let _ = state.update(Message::OutputSettings(
+            output_settings::Message::BitrateChanged(Mp3Bitrate::Kbps320),
+        ));
+        let _ = state.update(Message::OutputSettings(
+            output_settings::Message::SampleRateChanged(SampleRate::Hz48000),
+        ));
+        let _ = state.update(Message::OutputSettings(
+            output_settings::Message::ChannelsChanged(ChannelMode::Mono),
+        ));
+
+        let options = state.queue.selected().unwrap().options;
+        assert_eq!(options.bitrate, Mp3Bitrate::Kbps320);
+        assert_eq!(options.sample_rate, SampleRate::Hz48000);
+        assert_eq!(options.channels, ChannelMode::Mono);
     }
 
     #[test]

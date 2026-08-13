@@ -60,6 +60,28 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    #[error("could not determine the user settings directory")]
+    PreferencesDirectoryUnavailable,
+    #[error("could not read settings from `{path}`: {source}")]
+    PreferencesRead {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("settings in `{path}` are invalid: {source}")]
+    PreferencesParse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("could not save settings to `{path}`: {source}")]
+    PreferencesWrite {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("could not serialize settings: {0}")]
+    PreferencesSerialize(#[from] serde_json::Error),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

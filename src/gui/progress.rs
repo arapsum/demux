@@ -6,7 +6,10 @@ use iced::{Element, Fill, Font, Padding};
 
 use crate::{
     ffmpeg::{FfmpegProgress, RipRequest},
-    model::job::{JobId, RipProgress},
+    model::{
+        encoding::RipOptions,
+        job::{JobId, RipProgress},
+    },
 };
 
 use super::{
@@ -61,8 +64,7 @@ enum Status {
 struct ActiveProgress {
     job_id: JobId,
     filename: String,
-    encoder: String,
-    target_bitrate_kbps: u32,
+    options: RipOptions,
     progress: RipProgress,
     status: Status,
 }
@@ -87,8 +89,7 @@ impl Progress {
                 self.active = Some(ActiveProgress {
                     job_id,
                     filename: filename(&request.input),
-                    encoder: request.options.encoder,
-                    target_bitrate_kbps: request.options.bitrate_kbps,
+                    options: request.options,
                     progress,
                     status: Status::Running,
                 });
@@ -236,7 +237,7 @@ impl Progress {
                     .progress
                     .bitrate_kbps
                     .map(|bitrate| format!("{bitrate:.0} kbps"))
-                    .unwrap_or_else(|| format!("{} kbps target", active.target_bitrate_kbps))
+                    .unwrap_or_else(|| format!("{} target", active.options.bitrate))
             ),
             metric(
                 "Output size",
@@ -305,9 +306,15 @@ impl Progress {
                 .align_y(iced::Alignment::Center),
                 metrics,
                 row![
-                    text(format!("Audio: {} · MP3", active.encoder))
-                        .size(11)
-                        .color(TEXT_MUTED),
+                    text(format!(
+                        "Audio: {} · {} · {} · {}",
+                        active.options.format,
+                        active.options.bitrate,
+                        active.options.sample_rate,
+                        active.options.channels
+                    ))
+                    .size(11)
+                    .color(TEXT_MUTED),
                     space::horizontal(),
                     cancel,
                 ]

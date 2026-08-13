@@ -13,24 +13,9 @@ use tokio::sync::mpsc;
 use crate::ffmpeg::{
     CancellationSignal, FFmpegError, FFmpegResult, FfmpegProgress, ProgressParser,
 };
+use crate::model::encoding::RipOptions;
 
 const CANCELLATION_GRACE_PERIOD: Duration = Duration::from_secs(3);
-
-/// Encoding policy for one audio extraction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RipOptions {
-    pub encoder: String,
-    pub bitrate_kbps: u32,
-}
-
-impl Default for RipOptions {
-    fn default() -> Self {
-        Self {
-            encoder: "libmp3lame".to_owned(),
-            bitrate_kbps: 192,
-        }
-    }
-}
 
 /// Describes an extraction without coupling it to process execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +32,19 @@ impl RipRequest {
             input: input.into(),
             output: output.into(),
             options: RipOptions::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_options(
+        input: impl Into<PathBuf>,
+        output: impl Into<PathBuf>,
+        options: RipOptions,
+    ) -> Self {
+        Self {
+            input: input.into(),
+            output: output.into(),
+            options,
         }
     }
 }
@@ -85,9 +83,13 @@ impl FfmpegCommandBuilder {
             .arg(&request.input)
             .arg("-vn")
             .arg("-c:a")
-            .arg(&request.options.encoder)
+            .arg(request.options.encoder())
             .arg("-b:a")
-            .arg(format!("{}k", request.options.bitrate_kbps))
+            .arg(format!("{}k", request.options.bitrate.kbps()))
+            .arg("-ar")
+            .arg(request.options.sample_rate.hz().to_string())
+            .arg("-ac")
+            .arg(request.options.channels.channels().to_string())
             .arg("-progress")
             .arg("pipe:1")
             .arg("-nostats")
@@ -246,8 +248,10 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
         level = "debug",
         skip_all,
         fields(
-            encoder = %request.options.encoder,
-            bitrate_kbps = request.options.bitrate_kbps,
+            encoder = request.options.encoder(),
+            bitrate_kbps = request.options.bitrate.kbps(),
+            sample_rate_hz = request.options.sample_rate.hz(),
+            channels = request.options.channels.channels(),
         )
     )]
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
@@ -274,8 +278,10 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         level = "debug",
         skip_all,
         fields(
-            encoder = %request.options.encoder,
-            bitrate_kbps = request.options.bitrate_kbps,
+            encoder = request.options.encoder(),
+            bitrate_kbps = request.options.bitrate.kbps(),
+            sample_rate_hz = request.options.sample_rate.hz(),
+            channels = request.options.channels.channels(),
         )
     )]
     pub async fn rip_with_progress(
@@ -302,8 +308,10 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         level = "debug",
         skip_all,
         fields(
-            encoder = %request.options.encoder,
-            bitrate_kbps = request.options.bitrate_kbps,
+            encoder = request.options.encoder(),
+            bitrate_kbps = request.options.bitrate.kbps(),
+            sample_rate_hz = request.options.sample_rate.hz(),
+            channels = request.options.channels.channels(),
         )
     )]
     pub async fn rip_with_progress_cancellable(
@@ -368,18 +376,22 @@ pub async fn rip(input: impl AsRef<Path>, output: impl AsRef<Path>) -> FFmpegRes
 mod tests {
     use std::ffi::OsStr;
 
+    use crate::ffmpeg::{ChannelMode, Mp3Bitrate, OutputFormat, SampleRate};
+
     use super::*;
 
     #[test]
     fn command_builder_applies_request_options() {
-        let request = RipRequest {
-            input: "input.mov".into(),
-            output: "output.mp3".into(),
-            options: RipOptions {
-                encoder: "custom-encoder".into(),
-                bitrate_kbps: 256,
+        let request = RipRequest::with_options(
+            "input.mov",
+            "output.mp3",
+            RipOptions {
+                format: OutputFormat::Mp3,
+                bitrate: Mp3Bitrate::Kbps256,
+                sample_rate: SampleRate::Hz48000,
+                channels: ChannelMode::Mono,
             },
-        };
+        );
 
         let command = FfmpegCommandBuilder::build_rip(&request);
         let arguments: Vec<&OsStr> = command.as_std().get_args().collect();
@@ -393,9 +405,13 @@ mod tests {
                 "input.mov",
                 "-vn",
                 "-c:a",
-                "custom-encoder",
+                "libmp3lame",
                 "-b:a",
                 "256k",
+                "-ar",
+                "48000",
+                "-ac",
+                "1",
                 "-progress",
                 "pipe:1",
                 "-nostats",
@@ -403,6 +419,52 @@ mod tests {
             ]
             .map(OsStr::new)
         );
+    }
+
+    #[test]
+    fn command_builder_covers_every_selectable_mp3_combination() {
+        let mut combinations = 0;
+        for bitrate in Mp3Bitrate::ALL {
+            for sample_rate in SampleRate::ALL {
+                for channels in ChannelMode::ALL {
+                    let request = RipRequest::with_options(
+                        "input.mov",
+                        "output.mp3",
+                        RipOptions {
+                            format: OutputFormat::Mp3,
+                            bitrate,
+                            sample_rate,
+                            channels,
+                        },
+                    );
+                    let command = FfmpegCommandBuilder::build_rip(&request);
+                    let arguments: Vec<_> = command
+                        .as_std()
+                        .get_args()
+                        .map(|argument| argument.to_string_lossy().into_owned())
+                        .collect();
+
+                    assert!(
+                        arguments.windows(2).any(|pair| {
+                            pair == ["-b:a", format!("{}k", bitrate.kbps()).as_str()]
+                        })
+                    );
+                    assert!(
+                        arguments
+                            .windows(2)
+                            .any(|pair| { pair == ["-ar", sample_rate.hz().to_string().as_str()] })
+                    );
+                    assert!(
+                        arguments.windows(2).any(|pair| {
+                            pair == ["-ac", channels.channels().to_string().as_str()]
+                        })
+                    );
+                    combinations += 1;
+                }
+            }
+        }
+
+        assert_eq!(combinations, 16);
     }
 
     #[cfg(unix)]
