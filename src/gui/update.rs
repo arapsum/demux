@@ -24,6 +24,7 @@ impl Demux {
         )
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::DependenciesChecked(result) => {

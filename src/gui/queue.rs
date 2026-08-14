@@ -64,7 +64,7 @@ pub enum Message {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Action {
+pub enum Action {
     None,
     FilePickerOpened,
     IntakeRequested(Vec<PathBuf>),
@@ -86,8 +86,14 @@ pub(crate) enum Action {
     },
 }
 
+enum Finish {
+    Completed,
+    Cancelled,
+    Failed,
+}
+
 #[derive(Debug)]
-pub(crate) struct Queue {
+pub struct Queue {
     jobs: Vec<RipJob>,
     selected_job: Option<JobId>,
     picking_file: bool,
@@ -103,7 +109,7 @@ pub(crate) struct Queue {
 }
 
 impl Queue {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             jobs: Vec::new(),
             selected_job: None,
@@ -120,6 +126,7 @@ impl Queue {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn update(&mut self, message: Message) -> (Action, Task<Message>) {
         match message {
             Message::AddFiles => {
@@ -254,7 +261,7 @@ impl Queue {
                 (action, Task::none())
             }
             Message::ProgressReceived { job_id, progress } => {
-                self.record_progress(&job_id, progress);
+                self.record_progress(&job_id, &progress);
                 (Action::None, Task::none())
             }
             Message::RipCompleted { job_id, result } => {
@@ -486,12 +493,6 @@ impl Queue {
             return Action::None;
         }
 
-        enum Finish {
-            Completed,
-            Cancelled,
-            Failed,
-        }
-
         let finish = match result {
             Ok(RipTermination::Completed(_)) => {
                 job.complete();
@@ -548,7 +549,7 @@ impl Queue {
         Action::None
     }
 
-    fn record_progress(&mut self, job_id: &JobId, event: RipProgressEvent) {
+    fn record_progress(&mut self, job_id: &JobId, event: &RipProgressEvent) {
         if !self.is_active_job(job_id) {
             return;
         }
@@ -596,7 +597,7 @@ impl Queue {
                 .any(|job| matches!(job.status, JobStatus::Pending | JobStatus::Probing))
     }
 
-    pub(crate) fn is_running(&self) -> bool {
+    pub(crate) const fn is_running(&self) -> bool {
         self.runner.is_some()
     }
 
@@ -613,6 +614,7 @@ impl Queue {
         Some((runner.position()?, runner.total()))
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view<'a>(&'a self, error: Option<&'a str>) -> Element<'a, Message> {
         let choose_copy = if self.drop_hovered {
             "Drop to add these videos"
@@ -684,7 +686,7 @@ impl Queue {
         .style(destructive_action)
         .on_press_maybe(remove_message);
 
-        let chooser_copy = container(
+        let chooser_panel = container(
             column![
                 icon::media_file(if self.drop_hovered {
                     super::style::ACCENT
@@ -707,7 +709,7 @@ impl Queue {
         .center_x(Fill)
         .center_y(Fill);
 
-        let chooser = container(stack![drop_zone::chrome(self.drop_hovered), chooser_copy,])
+        let chooser = container(stack![drop_zone::chrome(self.drop_hovered), chooser_panel,])
             .width(Fill)
             .height(150);
 
@@ -790,6 +792,7 @@ impl Queue {
         container(content).width(Fill).height(Fill).into()
     }
 
+    #[allow(clippy::too_many_lines)]
     fn queue_panel(&self) -> Element<'_, Message> {
         let header = container(
             row![
@@ -934,10 +937,10 @@ fn job_row(
             } else {
                 "Ripping audio"
             };
-            if !duration_known {
-                format!("{phase} ({position} of {total})")
-            } else {
+            if duration_known {
                 format!("{phase} ({position} of {total}) · {percent:.0}%")
+            } else {
+                format!("{phase} ({position} of {total})")
             }
         },
     );

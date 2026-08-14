@@ -43,6 +43,15 @@ fn share_error<T>(result: crate::Result<T>) -> TaskResult<T> {
     result.map_err(Arc::new)
 }
 
+/// Starts the desktop `iced` application.
+///
+/// # Returns
+///
+/// The result returned by the `iced` runtime after the window closes.
+///
+/// # Errors
+///
+/// Returns an error when the window or renderer cannot be initialized.
 pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)
         .title("Demux")

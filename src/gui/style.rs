@@ -1,22 +1,22 @@
 use iced::widget::{button, container, pick_list};
 use iced::{Background, Border, Color, Shadow, Theme};
 
-pub(crate) const TEXT_MUTED: Color = Color::from_rgb(0.62, 0.64, 0.70);
-pub(crate) const ACCENT: Color = Color::from_rgb(0.43, 0.36, 0.96);
-pub(crate) const SUCCESS: Color = Color::from_rgb(0.35, 0.78, 0.57);
-pub(crate) const WARNING: Color = Color::from_rgb(0.96, 0.68, 0.30);
-pub(crate) const DANGER: Color = Color::from_rgb(0.94, 0.39, 0.42);
-pub(crate) const DANGER_TEXT: Color = Color::from_rgb(0.95, 0.76, 0.77);
-pub(crate) const INSET_BACKGROUND: Color = Color::from_rgb(0.065, 0.07, 0.087);
-pub(crate) const DROP_BORDER: Color = Color::from_rgb(0.31, 0.32, 0.38);
-pub(crate) const ICON_MUTED: Color = Color::from_rgb(0.48, 0.50, 0.57);
-pub(crate) const BUTTON_TEXT: Color = Color::from_rgb(0.94, 0.95, 0.98);
+pub const TEXT_MUTED: Color = Color::from_rgb(0.62, 0.64, 0.70);
+pub const ACCENT: Color = Color::from_rgb(0.43, 0.36, 0.96);
+pub const SUCCESS: Color = Color::from_rgb(0.35, 0.78, 0.57);
+pub const WARNING: Color = Color::from_rgb(0.96, 0.68, 0.30);
+pub const DANGER: Color = Color::from_rgb(0.94, 0.39, 0.42);
+pub const DANGER_TEXT: Color = Color::from_rgb(0.95, 0.76, 0.77);
+pub const INSET_BACKGROUND: Color = Color::from_rgb(0.065, 0.07, 0.087);
+pub const DROP_BORDER: Color = Color::from_rgb(0.31, 0.32, 0.38);
+pub const ICON_MUTED: Color = Color::from_rgb(0.48, 0.50, 0.57);
+pub const BUTTON_TEXT: Color = Color::from_rgb(0.94, 0.95, 0.98);
 
-pub(crate) fn app_background(_theme: &Theme) -> container::Style {
+pub fn app_background(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.055, 0.06, 0.075))
 }
 
-pub(crate) fn panel(_theme: &Theme) -> container::Style {
+pub fn panel(_theme: &Theme) -> container::Style {
     container::Style::default()
         .background(Color::from_rgb(0.085, 0.092, 0.112))
         .border(Border {
@@ -31,7 +31,7 @@ pub(crate) fn panel(_theme: &Theme) -> container::Style {
         })
 }
 
-pub(crate) fn inset_panel(_theme: &Theme) -> container::Style {
+pub fn inset_panel(_theme: &Theme) -> container::Style {
     container::Style::default()
         .background(INSET_BACKGROUND)
         .border(Border {
@@ -41,23 +41,23 @@ pub(crate) fn inset_panel(_theme: &Theme) -> container::Style {
         })
 }
 
-pub(crate) fn queue_header(_theme: &Theme) -> container::Style {
+pub fn queue_header(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.075, 0.08, 0.098))
 }
 
-pub(crate) fn queue_row(_theme: &Theme) -> container::Style {
+pub fn queue_row(_theme: &Theme) -> container::Style {
     container::Style::default()
 }
 
-pub(crate) fn selected_queue_row(_theme: &Theme) -> container::Style {
+pub fn selected_queue_row(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.105, 0.10, 0.16))
 }
 
-pub(crate) fn queue_footer(_theme: &Theme) -> container::Style {
+pub fn queue_footer(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.075, 0.08, 0.098))
 }
 
-pub(crate) fn accent_tile(_theme: &Theme) -> container::Style {
+pub fn accent_tile(_theme: &Theme) -> container::Style {
     container::Style::default()
         .background(Color::from_rgb(0.20, 0.17, 0.43))
         .border(Border {
@@ -67,7 +67,7 @@ pub(crate) fn accent_tile(_theme: &Theme) -> container::Style {
         })
 }
 
-pub(crate) fn error_panel(_theme: &Theme) -> container::Style {
+pub fn error_panel(_theme: &Theme) -> container::Style {
     container::Style::default()
         .background(Color::from_rgb(0.16, 0.075, 0.085))
         .border(Border {
@@ -77,7 +77,7 @@ pub(crate) fn error_panel(_theme: &Theme) -> container::Style {
         })
 }
 
-pub(crate) fn settings_select(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
+pub fn settings_select(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
     let border_color = match status {
         pick_list::Status::Active => Color::from_rgb(0.19, 0.20, 0.24),
         pick_list::Status::Hovered | pick_list::Status::Opened { .. } => ACCENT,
@@ -96,7 +96,7 @@ pub(crate) fn settings_select(_theme: &Theme, status: pick_list::Status) -> pick
     }
 }
 
-pub(crate) fn primary_action(_theme: &Theme, status: button::Status) -> button::Style {
+pub fn primary_action(_theme: &Theme, status: button::Status) -> button::Style {
     let (background, text_color, border_color) = match status {
         button::Status::Active => (ACCENT, Color::WHITE, ACCENT),
         button::Status::Hovered => (
@@ -119,7 +119,7 @@ pub(crate) fn primary_action(_theme: &Theme, status: button::Status) -> button::
     action_button(background, text_color, border_color)
 }
 
-pub(crate) fn secondary_action(_theme: &Theme, status: button::Status) -> button::Style {
+pub fn secondary_action(_theme: &Theme, status: button::Status) -> button::Style {
     let (background, text_color, border_color) = match status {
         button::Status::Active => (
             Color::from_rgb(0.105, 0.112, 0.135),
@@ -146,7 +146,7 @@ pub(crate) fn secondary_action(_theme: &Theme, status: button::Status) -> button
     action_button(background, text_color, border_color)
 }
 
-pub(crate) fn destructive_action(_theme: &Theme, status: button::Status) -> button::Style {
+pub fn destructive_action(_theme: &Theme, status: button::Status) -> button::Style {
     let (background, text_color, border_color) = match status {
         button::Status::Active => (
             Color::from_rgb(0.11, 0.085, 0.10),
@@ -169,7 +169,7 @@ pub(crate) fn destructive_action(_theme: &Theme, status: button::Status) -> butt
     action_button(background, text_color, border_color)
 }
 
-pub(crate) fn queue_row_action(_theme: &Theme, status: button::Status) -> button::Style {
+pub fn queue_row_action(_theme: &Theme, status: button::Status) -> button::Style {
     let background = match status {
         button::Status::Hovered => Some(Background::Color(Color::from_rgb(0.105, 0.11, 0.135))),
         button::Status::Pressed => Some(Background::Color(Color::from_rgb(0.075, 0.08, 0.098))),

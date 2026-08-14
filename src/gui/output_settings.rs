@@ -38,7 +38,7 @@ pub enum Message {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Action {
+pub enum Action {
     None,
     OutputChanged,
     EncodingChanged(RipOptions),
@@ -47,7 +47,7 @@ pub(crate) enum Action {
 }
 
 #[derive(Debug)]
-pub(crate) struct OutputSettings {
+pub struct OutputSettings {
     folder: String,
     options: RipOptions,
     destination: DestinationPolicy,
@@ -151,7 +151,7 @@ impl OutputSettings {
     ) {
         if self.folder.is_empty()
             && let Some(parent) = hierarchy
-                .map(|source| source.root())
+                .map(crate::model::source::SourceHierarchy::root)
                 .or_else(|| input.parent())
         {
             self.folder = parent.to_string_lossy().into_owned();
@@ -197,6 +197,7 @@ impl OutputSettings {
         )
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view<'a>(
         &'a self,
         dependency_state: &DependencyState,
@@ -364,7 +365,7 @@ impl OutputSettings {
                 .color(TEXT_MUTED),
             ]
             .spacing(7),
-            selected_job_detail(selected_job, run_progress, selected_status, dependencies,),
+            selected_job_detail(selected_job, run_progress, selected_status, &dependencies),
         ]
         .spacing(16);
 
@@ -396,11 +397,12 @@ impl OutputSettings {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn selected_job_detail(
     job: Option<&RipJob>,
     run_progress: Option<(usize, usize)>,
     selected_status: String,
-    dependencies: DependencyPresentation,
+    dependencies: &DependencyPresentation,
 ) -> Element<'static, Message> {
     let mut detail = column![
         text(if run_progress.is_some() {

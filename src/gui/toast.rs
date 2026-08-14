@@ -18,7 +18,7 @@ const SUCCESS_DURATION: Duration = Duration::from_secs(6);
 const WARNING_DURATION: Duration = Duration::from_secs(8);
 const FAILURE_DURATION: Duration = Duration::from_secs(10);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Message {
     Dismiss(ToastId),
 }
@@ -33,14 +33,14 @@ impl ToastId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ToastStatus {
+pub enum ToastStatus {
     Success,
     Warning,
     Danger,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Toast {
+pub struct Toast {
     pub(crate) id: ToastId,
     pub(crate) title: String,
     pub(crate) body: String,
@@ -48,13 +48,13 @@ pub(crate) struct Toast {
 }
 
 #[derive(Debug)]
-pub(crate) struct Notifications {
+pub struct Notifications {
     toasts: Vec<Toast>,
     next_id: u64,
 }
 
 impl Notifications {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             toasts: Vec::new(),
             next_id: 1,
@@ -142,13 +142,13 @@ impl Toast {
         }
     }
 
-    pub(crate) fn with_id(mut self, id: ToastId) -> Self {
+    pub(crate) const fn with_id(mut self, id: ToastId) -> Self {
         self.id = id;
         self
     }
 }
 
-pub(crate) struct Manager<'a> {
+pub struct Manager<'a> {
     content: Element<'a, AppMessage>,
     toasts: Vec<Element<'a, AppMessage>>,
 }

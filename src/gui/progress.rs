@@ -21,7 +21,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Action {
+pub enum Action {
     None,
     CancelRequested(JobId),
 }
@@ -71,12 +71,12 @@ struct ActiveProgress {
 }
 
 #[derive(Debug)]
-pub(crate) struct Progress {
+pub struct Progress {
     active: Option<ActiveProgress>,
 }
 
 impl Progress {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { active: None }
     }
 
@@ -163,6 +163,7 @@ impl Progress {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn view(&self) -> Element<'_, Message> {
         let heading = text("Progress").size(17).font(Font {
             weight: Weight::Semibold,
@@ -221,7 +222,9 @@ impl Progress {
             "Indeterminate".to_owned()
         };
         let bar_value = if duration_known {
-            active.progress.percent as f32
+            let elapsed = active.progress.elapsed.as_secs_f32();
+            let duration = active.progress.duration.as_secs_f32();
+            (elapsed / duration * 100.0).clamp(0.0, 100.0)
         } else {
             0.0
         };
@@ -233,16 +236,14 @@ impl Progress {
                 active
                     .progress
                     .remaining
-                    .map(format_duration)
-                    .unwrap_or_else(|| "Unknown".to_owned())
+                    .map_or_else(|| "Unknown".to_owned(), format_duration)
             ),
             metric(
                 "Speed",
                 active
                     .progress
                     .speed
-                    .map(|speed| format!("{speed:.2}×"))
-                    .unwrap_or_else(|| "Unknown".to_owned())
+                    .map_or_else(|| "Unknown".to_owned(), |speed| format!("{speed:.2}×"))
             ),
         ]
         .spacing(18);
@@ -250,19 +251,17 @@ impl Progress {
             metrics = metrics
                 .push(metric(
                     "Bitrate",
-                    active
-                        .progress
-                        .bitrate_kbps
-                        .map(|bitrate| format!("{bitrate:.0} kbps"))
-                        .unwrap_or_else(|| format!("{} target", active.options.bitrate)),
+                    active.progress.bitrate_kbps.map_or_else(
+                        || format!("{} target", active.options.bitrate),
+                        |bitrate| format!("{bitrate:.0} kbps"),
+                    ),
                 ))
                 .push(metric(
                     "Output size",
                     active
                         .progress
                         .output_size
-                        .map(format_size)
-                        .unwrap_or_else(|| "Unknown".to_owned()),
+                        .map_or_else(|| "Unknown".to_owned(), format_size),
                 ));
         }
 
@@ -371,12 +370,21 @@ fn format_duration(duration: std::time::Duration) -> String {
 }
 
 fn format_size(bytes: u64) -> String {
-    const MIB: f64 = 1_048_576.0;
-    if bytes >= 1_048_576 {
-        format!("{:.1} MB", bytes as f64 / MIB)
+    const MIB: u64 = 1_048_576;
+    if bytes >= MIB {
+        format_scaled_size(bytes, MIB, "MB")
     } else {
-        format!("{:.1} KB", bytes as f64 / 1_024.0)
+        format_scaled_size(bytes, 1_024, "KB")
     }
+}
+
+fn format_scaled_size(bytes: u64, unit: u64, label: &str) -> String {
+    let whole = bytes / unit;
+    let fraction = (bytes % unit)
+        .saturating_mul(10)
+        .checked_div(unit)
+        .unwrap_or_default();
+    format!("{whole}.{fraction} {label}")
 }
 
 #[cfg(test)]

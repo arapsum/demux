@@ -5,7 +5,7 @@ use super::style::{ACCENT, DROP_BORDER, INSET_BACKGROUND};
 
 const DASH_PATTERN: &[f32] = &[7.0, 6.0];
 
-pub(crate) fn chrome<'a, Message: 'a>(active: bool) -> Element<'a, Message> {
+pub fn chrome<'a, Message: 'a>(active: bool) -> Element<'a, Message> {
     canvas::Canvas::new(DropZoneChrome { active })
         .width(Fill)
         .height(Fill)

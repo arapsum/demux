@@ -9,7 +9,7 @@ use crate::{
 
 use super::style::{ACCENT, DANGER, SUCCESS, TEXT_MUTED, WARNING};
 
-pub(crate) struct DependencyPresentation {
+pub struct DependencyPresentation {
     pub(crate) label: &'static str,
     pub(crate) color: Color,
 }
@@ -33,7 +33,7 @@ impl From<&DependencyState> for DependencyPresentation {
     }
 }
 
-pub(crate) struct StatusPresentation {
+pub struct StatusPresentation {
     pub(crate) label: &'static str,
     pub(crate) color: Color,
 }
@@ -89,7 +89,7 @@ impl From<&JobStatus> for StatusPresentation {
     }
 }
 
-pub(crate) struct JobPresentation {
+pub struct JobPresentation {
     pub(crate) id: JobId,
     pub(crate) filename: String,
     pub(crate) duration: String,
@@ -109,8 +109,7 @@ impl From<&RipJob> for JobPresentation {
         let duration = job
             .metadata
             .as_ref()
-            .map(|metadata| format_duration(metadata.duration))
-            .unwrap_or_else(|| "—".into());
+            .map_or_else(|| "—".into(), |metadata| format_duration(metadata.duration));
         Self {
             id: job.id.clone(),
             filename,
@@ -143,13 +142,27 @@ fn format_duration(duration: std::time::Duration) -> String {
     }
 }
 
-pub(crate) fn format_size(bytes: u64) -> String {
-    const MIB: f64 = 1_048_576.0;
-    const GIB: f64 = 1_073_741_824.0;
-    if bytes >= 1_073_741_824 {
-        format!("{:.2} GB", bytes as f64 / GIB)
+pub fn format_size(bytes: u64) -> String {
+    const MIB: u64 = 1_048_576;
+    const GIB: u64 = 1_073_741_824;
+    if bytes >= GIB {
+        format_scaled_size(bytes, GIB, 2, "GB")
     } else {
-        format!("{:.1} MB", bytes as f64 / MIB)
+        format_scaled_size(bytes, MIB, 1, "MB")
+    }
+}
+
+fn format_scaled_size(bytes: u64, unit: u64, decimals: u32, label: &str) -> String {
+    let whole = bytes / unit;
+    let scale = 10_u64.pow(decimals);
+    let fraction = (bytes % unit)
+        .saturating_mul(scale)
+        .checked_div(unit)
+        .unwrap_or_default();
+    match decimals {
+        1 => format!("{whole}.{fraction:01} {label}"),
+        2 => format!("{whole}.{fraction:02} {label}"),
+        _ => format!("{whole}.{fraction} {label}"),
     }
 }
 
