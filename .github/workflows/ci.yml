@@ -36,3 +36,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-targets --all-features
+
+      - name: Install FFmpeg for normalization integration tests
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Test FFmpeg normalization
+        run: cargo test --test ffmpeg_normalization -- --ignored
