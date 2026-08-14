@@ -38,7 +38,10 @@ Demux is a cross-platform desktop utility used with local media files and locall
   remove partial output, and reuse that recovery path when closing the app.
 - Snapshot effective encoding settings per job and restore valid user defaults
   from the platform configuration directory on restart.
-- Artwork, metadata embedding, normalization, and pause are later milestones.
+- Copy an allowlisted set of source tags and compatible embedded cover art into
+  MP3 outputs when enabled, while treating missing or unsupported artwork as a
+  non-fatal condition.
+- Normalization and pause remain later milestones.
 
 ## Brand Commitments
 

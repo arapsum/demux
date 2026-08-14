@@ -43,11 +43,13 @@ The current GUI slice supports multi-file and folder intake, asynchronous media
 probing, a shared output folder, and sequential MP3 extraction with per-row
 terminal states, live process measurements, and a queue summary. Cancellation
 stops the active FFmpeg process and remaining queue, removes partial output, and
-also protects application shutdown. MP3 jobs snapshot a validated bitrate,
-sample rate, and channel mode before execution, while user defaults persist
-between launches. Metadata editing, artwork extraction, normalization, presets,
-parallel ripping, and advanced stream selection can follow once that pipeline
-is solid. Pause is also treated as a later, platform-dependent refinement.
+also protects application shutdown. MP3 jobs snapshot validated bitrate, sample
+rate, channel mode, metadata, and artwork policies before execution, while user
+defaults persist between launches. Allowlisted source tags and compatible
+embedded cover art are preserved when their controls are enabled; absent or
+unsupported artwork remains non-fatal. Normalization, presets, parallel
+ripping, and advanced stream selection can follow once that pipeline is solid.
+Pause is also treated as a later, platform-dependent refinement.
 
 ## Architecture
 
@@ -141,6 +143,7 @@ connects each reference-interface feature to its required backend behavior.
 - [x] Connect multi-file and folder intake, desktop drops, queue selection, and removal.
 - [x] Connect sequential queue execution and queue-aware completion summaries.
 - [x] Connect the progress panel.
+- [x] Add validated MP3 settings, metadata policies, and compatible artwork.
 - [ ] Add packaging and platform-specific distribution guidance.
 
 ## License

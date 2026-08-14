@@ -253,6 +253,12 @@ restored from the user's platform configuration directory on restart.
 
 Purpose: implement the first advanced options shown in the reference.
 
+**Status: complete.** Demux probes an allowlisted set of Unicode-safe source
+tags, detects attached cover art, and carries both policies with each queued
+job. FFmpeg writes safe ID3 metadata and compatible JPEG/PNG artwork when
+enabled, skips unsupported artwork without failing extraction, and the selected
+job surface explains what was found and what will be used.
+
 ### Engine first
 
 - Define metadata-copy policy for title, artist, album, date, track, and other

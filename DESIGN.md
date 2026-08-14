@@ -157,8 +157,9 @@ channels and destination retain full width for scanability. Selectors use the
 same inset surface and 12px geometry as path fields, with violet reserved for
 hover, focus, or open state. During queue execution, values become quiet
 read-only fields so the visible settings match the active job snapshot. The
-controls area scrolls at the minimum window height while status and Start remain
-reachable.
+metadata and artwork policies sit beneath the encoding selectors as two
+independent, plainly labelled checks. The controls area scrolls at the minimum
+window height while status and Start remain reachable.
 
 ### Job Row
 
@@ -180,6 +181,11 @@ failed, and skipped rows remain visible with textual terminal states. Intake,
 removal, and destination edits are unavailable only while the runner owns the
 queue. The final toast reports completed, failed, and skipped counts, and failed
 rows retain their detailed process error for inspection.
+
+The selected-job detail beneath Output Settings carries the effective metadata
+and artwork policy plus a compact title/artist/album summary. It names missing
+artwork as unavailable and unsupported formats as skipped, never presenting
+either state as an extraction failure.
 
 ### Progress Surface
 
