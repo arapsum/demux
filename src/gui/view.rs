@@ -66,6 +66,7 @@ impl Demux {
             .view(
                 &self.dependency_state,
                 self.queue.selected_status(),
+                self.queue.selected(),
                 self.queue.run_progress(),
                 self.can_start(),
             )

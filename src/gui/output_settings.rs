@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use iced::font::Weight;
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, text, text_input,
+};
 use iced::{Element, Fill, FillPortion, Font, Padding, Task};
 
 use crate::{
     ffmpeg::DependencyState,
     model::{
         encoding::{ChannelMode, Mp3Bitrate, OutputFormat, RipOptions, SampleRate},
-        job::JobStatus,
+        job::{JobStatus, RipJob},
     },
 };
 
@@ -23,6 +25,8 @@ pub enum Message {
     BitrateChanged(Mp3Bitrate),
     SampleRateChanged(SampleRate),
     ChannelsChanged(ChannelMode),
+    EmbedMetadataToggled(bool),
+    ExtractArtworkToggled(bool),
     FolderChanged(String),
     Browse,
     FolderSelected(Option<PathBuf>),
@@ -61,6 +65,8 @@ impl OutputSettings {
                     | Message::BitrateChanged(_)
                     | Message::SampleRateChanged(_)
                     | Message::ChannelsChanged(_)
+                    | Message::EmbedMetadataToggled(_)
+                    | Message::ExtractArtworkToggled(_)
                     | Message::FolderChanged(_)
                     | Message::Browse
                     | Message::FolderSelected(_)
@@ -87,6 +93,16 @@ impl OutputSettings {
             }
             Message::ChannelsChanged(channels) => {
                 self.options.channels = channels;
+                self.defaults_modified = true;
+                (Action::EncodingChanged(self.options), Task::none())
+            }
+            Message::EmbedMetadataToggled(enabled) => {
+                self.options.embed_metadata = enabled;
+                self.defaults_modified = true;
+                (Action::EncodingChanged(self.options), Task::none())
+            }
+            Message::ExtractArtworkToggled(enabled) => {
+                self.options.extract_artwork = enabled;
                 self.defaults_modified = true;
                 (Action::EncodingChanged(self.options), Task::none())
             }
@@ -153,6 +169,7 @@ impl OutputSettings {
         &'a self,
         dependency_state: &DependencyState,
         job_status: Option<&JobStatus>,
+        selected_job: Option<&RipJob>,
         run_progress: Option<(usize, usize)>,
         can_start: bool,
     ) -> Element<'a, Message> {
@@ -251,6 +268,15 @@ impl OutputSettings {
             .into()
         };
 
+        let embed_metadata = checkbox(self.options.embed_metadata)
+            .label("Embed metadata (title, artist, album)")
+            .text_size(13)
+            .on_toggle_maybe((!output_locked).then_some(Message::EmbedMetadataToggled));
+        let extract_artwork = checkbox(self.options.extract_artwork)
+            .label("Extract artwork when available")
+            .text_size(13)
+            .on_toggle_maybe((!output_locked).then_some(Message::ExtractArtworkToggled));
+
         let controls = column![
             column![text("Output format").size(13).color(TEXT_MUTED), format,].spacing(7),
             row![
@@ -266,6 +292,7 @@ impl OutputSettings {
             ]
             .spacing(10),
             column![text("Audio channels").size(13).color(TEXT_MUTED), channels,].spacing(7),
+            column![embed_metadata, extract_artwork].spacing(10),
             column![
                 text("Output folder").size(13).color(TEXT_MUTED),
                 row![output_input.width(Fill), browse].spacing(8),
@@ -274,26 +301,7 @@ impl OutputSettings {
                     .color(TEXT_MUTED),
             ]
             .spacing(7),
-            container(
-                column![
-                    text(if run_progress.is_some() {
-                        "Queue execution"
-                    } else {
-                        "Selected job"
-                    })
-                    .size(12)
-                    .color(TEXT_MUTED),
-                    text(selected_status).size(16).font(Font {
-                        weight: Weight::Semibold,
-                        ..Font::default()
-                    }),
-                    text(dependencies.label).size(13).color(dependencies.color),
-                ]
-                .spacing(6),
-            )
-            .width(Fill)
-            .padding(14)
-            .style(inset_panel),
+            selected_job_detail(selected_job, run_progress, selected_status, dependencies,),
         ]
         .spacing(16);
 
@@ -323,6 +331,95 @@ impl OutputSettings {
         .style(panel)
         .into()
     }
+}
+
+fn selected_job_detail(
+    job: Option<&RipJob>,
+    run_progress: Option<(usize, usize)>,
+    selected_status: String,
+    dependencies: DependencyPresentation,
+) -> Element<'static, Message> {
+    let mut detail = column![
+        text(if run_progress.is_some() {
+            "Queue execution"
+        } else {
+            "Selected job"
+        })
+        .size(12)
+        .color(TEXT_MUTED),
+        text(selected_status).size(16).font(Font {
+            weight: Weight::Semibold,
+            ..Font::default()
+        }),
+        text(dependencies.label).size(13).color(dependencies.color),
+    ]
+    .spacing(6);
+
+    if let Some(job) = job {
+        detail = detail.push(
+            text(format!(
+                "Output: {} · {} · {} · {}",
+                job.options.format,
+                job.options.bitrate,
+                if job.options.embed_metadata {
+                    "metadata on"
+                } else {
+                    "metadata off"
+                },
+                if job.options.extract_artwork {
+                    "artwork on"
+                } else {
+                    "artwork off"
+                }
+            ))
+            .size(12)
+            .color(TEXT_MUTED),
+        );
+        if let Some(metadata) = &job.metadata {
+            let title = metadata
+                .tags
+                .title
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_owned());
+            let artist = metadata
+                .tags
+                .artist
+                .clone()
+                .unwrap_or_else(|| "Unknown artist".to_owned());
+            let album = metadata
+                .tags
+                .album
+                .clone()
+                .unwrap_or_else(|| "Unknown album".to_owned());
+            let artwork = match metadata.artwork.as_ref() {
+                Some(artwork) if artwork.supports_mp3() => {
+                    format!("{} cover art ready", artwork.format_label())
+                }
+                Some(_) => "Embedded artwork is unsupported; extraction will continue without it"
+                    .to_owned(),
+                None => "No embedded artwork detected".to_owned(),
+            };
+
+            detail = detail
+                .push(text("Metadata").size(12).color(TEXT_MUTED))
+                .push(text(format!("{title} · {artist}")).size(13))
+                .push(text(format!("Album: {album}")).size(12).color(TEXT_MUTED))
+                .push(text(artwork).size(12).color(TEXT_MUTED));
+        } else {
+            let message = if matches!(job.status, JobStatus::Pending | JobStatus::Probing) {
+                "Metadata is still being probed"
+            } else {
+                "Metadata is unavailable for this job"
+            };
+            detail = detail.push(text(message).size(12).color(TEXT_MUTED));
+        }
+    }
+
+    container(detail)
+        .width(Fill)
+        .padding(14)
+        .style(inset_panel)
+        .into()
 }
 
 fn locked_value(value: String) -> Element<'static, Message> {
@@ -408,10 +505,34 @@ mod tests {
     fn running_queue_ignores_stale_setting_messages() {
         let mut settings = OutputSettings::new();
 
-        let (action, _) = settings.update(Message::BitrateChanged(Mp3Bitrate::Kbps320), true);
+        let (action, _) = settings.update(Message::EmbedMetadataToggled(false), true);
 
         assert_eq!(action, Action::None);
         assert_eq!(settings.options(), RipOptions::default());
+    }
+
+    #[test]
+    fn metadata_controls_emit_independent_snapshots() {
+        let mut settings = OutputSettings::new();
+
+        let (action, _) = settings.update(Message::EmbedMetadataToggled(false), false);
+        assert_eq!(
+            action,
+            Action::EncodingChanged(RipOptions {
+                embed_metadata: false,
+                ..RipOptions::default()
+            })
+        );
+
+        let (action, _) = settings.update(Message::ExtractArtworkToggled(false), false);
+        assert_eq!(
+            action,
+            Action::EncodingChanged(RipOptions {
+                embed_metadata: false,
+                extract_artwork: false,
+                ..RipOptions::default()
+            })
+        );
     }
 
     #[test]
