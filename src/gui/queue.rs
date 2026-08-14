@@ -9,11 +9,12 @@ use crate::{
         intake::{AcceptedInput, IntakeResult, RejectedInput},
         queue_runner::{QueueRunSummary, QueueRunner},
     },
-    ffmpeg::{FfmpegProgress, RipRequest, RipTermination},
+    ffmpeg::{RipPhase, RipProgressEvent, RipRequest, RipTermination},
     model::{
         encoding::RipOptions,
         job::{JobId, JobStatus, RipJob, RipProgress},
         media::MediaInfo,
+        source::DestinationPolicy,
     },
 };
 
@@ -54,7 +55,7 @@ pub enum Message {
     StartQueue,
     ProgressReceived {
         job_id: JobId,
-        progress: FfmpegProgress,
+        progress: RipProgressEvent,
     },
     RipCompleted {
         job_id: JobId,
@@ -267,6 +268,7 @@ impl Queue {
         &mut self,
         paths: Vec<(AcceptedInput, PathBuf)>,
         options: RipOptions,
+        destination_policy: DestinationPolicy,
     ) -> Action {
         let mut probes = Vec::with_capacity(paths.len());
         for (input, output) in paths {
@@ -283,11 +285,13 @@ impl Queue {
             }
             let job_id = JobId::new(self.next_job_id);
             self.next_job_id += 1;
-            let mut job = RipJob::with_options(
+            let mut job = RipJob::with_options_and_destination(
                 job_id.clone(),
                 input.path.to_string_lossy().into_owned(),
                 output.to_string_lossy().into_owned(),
                 options,
+                destination_policy,
+                input.hierarchy,
             );
             job.input_size = Some(input.size);
             job.start_probing();
@@ -318,13 +322,20 @@ impl Queue {
         self.selected().map(|job| &job.status)
     }
 
-    pub(crate) fn set_output_paths(&mut self, mut derive: impl FnMut(&Path) -> PathBuf) {
+    pub(crate) fn has_folder_hierarchy(&self) -> bool {
+        self.jobs.iter().any(|job| job.source_hierarchy.is_some())
+    }
+
+    pub(crate) fn set_output_paths(&mut self, mut derive: impl FnMut(&RipJob) -> PathBuf) {
         for job in &mut self.jobs {
             if !matches!(
                 job.status,
-                JobStatus::Queued | JobStatus::Ripping | JobStatus::Completed
+                JobStatus::Queued
+                    | JobStatus::Analyzing
+                    | JobStatus::Ripping
+                    | JobStatus::Completed
             ) {
-                job.output = derive(Path::new(&job.input)).to_string_lossy().into_owned();
+                job.output = derive(job).to_string_lossy().into_owned();
             }
         }
     }
@@ -336,6 +347,17 @@ impl Queue {
                 JobStatus::Pending | JobStatus::Probing | JobStatus::Ready
             ) {
                 job.set_options(options);
+            }
+        }
+    }
+
+    pub(crate) fn set_destination_policy(&mut self, policy: DestinationPolicy) {
+        for job in &mut self.jobs {
+            if matches!(
+                job.status,
+                JobStatus::Pending | JobStatus::Probing | JobStatus::Ready
+            ) {
+                job.destination_policy = policy;
             }
         }
     }
@@ -381,8 +403,12 @@ impl Queue {
             if !matches!(job.status, JobStatus::Queued) {
                 return Action::None;
             }
-            job.start_ripping();
             self.selected_job = Some(job_id.clone());
+            if job.options.normalize_audio {
+                job.start_analyzing();
+            } else {
+                job.start_ripping();
+            }
             return Action::ResolveOutput {
                 job_id,
                 requested: PathBuf::from(&job.output),
@@ -417,7 +443,7 @@ impl Queue {
         let Some(job) = self.job_mut(job_id) else {
             return Action::None;
         };
-        if !matches!(job.status, JobStatus::Ripping) {
+        if !matches!(job.status, JobStatus::Analyzing | JobStatus::Ripping) {
             return Action::None;
         }
 
@@ -453,7 +479,10 @@ impl Queue {
         let Some(job) = self.job_mut(job_id) else {
             return Action::None;
         };
-        if !matches!(job.status, JobStatus::Ripping | JobStatus::Cancelling) {
+        if !matches!(
+            job.status,
+            JobStatus::Analyzing | JobStatus::Ripping | JobStatus::Cancelling
+        ) {
             return Action::None;
         }
 
@@ -519,22 +548,28 @@ impl Queue {
         Action::None
     }
 
-    fn record_progress(&mut self, job_id: &JobId, progress: FfmpegProgress) {
+    fn record_progress(&mut self, job_id: &JobId, event: RipProgressEvent) {
         if !self.is_active_job(job_id) {
             return;
         }
         let Some(job) = self.job_mut(job_id) else {
             return;
         };
-        if !matches!(job.status, JobStatus::Ripping) {
-            return;
+        match event.phase {
+            RipPhase::Analyzing if !matches!(job.status, JobStatus::Analyzing) => {
+                job.start_analyzing();
+            }
+            RipPhase::Encoding if !matches!(job.status, JobStatus::Ripping) => {
+                job.reset_for_encoding();
+            }
+            _ => {}
         }
 
         job.record_progress(
-            progress.elapsed,
-            progress.speed,
-            progress.bitrate_kbps,
-            progress.output_size,
+            event.progress.elapsed,
+            event.progress.speed,
+            event.progress.bitrate_kbps,
+            event.progress.output_size,
         );
     }
 
@@ -812,7 +847,7 @@ impl Queue {
                 |column, (index, job)| {
                     let run_progress = self.runner.as_ref().and_then(|runner| {
                         (runner.active() == Some(&job.id)
-                            && matches!(job.status, JobStatus::Ripping))
+                            && matches!(job.status, JobStatus::Analyzing | JobStatus::Ripping))
                         .then(|| (runner.position().unwrap_or(1), runner.total()))
                     });
                     column.push(job_row(
@@ -888,15 +923,21 @@ fn job_row(
 ) -> Element<'_, Message> {
     let duration_known = !job.progress.duration.is_zero();
     let percent = job.progress.percent;
+    let analyzing = matches!(job.status, JobStatus::Analyzing);
     let job = JobPresentation::from(job);
     let id = job.id.clone();
     let status_label = run_progress.map_or_else(
         || job.status.label.to_owned(),
         |(position, total)| {
-            if !duration_known {
-                format!("Ripping ({position} of {total})")
+            let phase = if analyzing {
+                "Analyzing loudness"
             } else {
-                format!("Ripping ({position} of {total}) · {percent:.0}%")
+                "Ripping audio"
+            };
+            if !duration_known {
+                format!("{phase} ({position} of {total})")
+            } else {
+                format!("{phase} ({position} of {total}) · {percent:.0}%")
             }
         },
     );
@@ -993,7 +1034,7 @@ async fn pick_video_folder() -> Option<PathBuf> {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use crate::ffmpeg::{ChannelMode, Mp3Bitrate, RipOutcome, SampleRate};
+    use crate::ffmpeg::{ChannelMode, FfmpegProgress, Mp3Bitrate, RipOutcome, SampleRate};
     use crate::model::media::AudioMetadata;
 
     use super::*;
@@ -1030,10 +1071,12 @@ mod tests {
                 AcceptedInput {
                     path: input,
                     size: 42,
+                    hierarchy: None,
                 },
                 output,
             )],
             RipOptions::default(),
+            DestinationPolicy::default(),
         );
         queue.jobs.last().unwrap().id.clone()
     }
@@ -1311,24 +1354,33 @@ mod tests {
 
         let _ = queue.update(Message::ProgressReceived {
             job_id: waiting,
-            progress: FfmpegProgress {
-                elapsed: Some(Duration::from_secs(60)),
-                ..FfmpegProgress::default()
+            progress: RipProgressEvent {
+                phase: RipPhase::Encoding,
+                progress: FfmpegProgress {
+                    elapsed: Some(Duration::from_secs(60)),
+                    ..FfmpegProgress::default()
+                },
             },
         });
         let _ = queue.update(Message::ProgressReceived {
             job_id: active.clone(),
-            progress: FfmpegProgress {
-                elapsed: Some(Duration::from_secs(40)),
-                speed: Some(2.0),
-                ..FfmpegProgress::default()
+            progress: RipProgressEvent {
+                phase: RipPhase::Encoding,
+                progress: FfmpegProgress {
+                    elapsed: Some(Duration::from_secs(40)),
+                    speed: Some(2.0),
+                    ..FfmpegProgress::default()
+                },
             },
         });
         let _ = queue.update(Message::ProgressReceived {
             job_id: active,
-            progress: FfmpegProgress {
-                elapsed: Some(Duration::from_secs(30)),
-                ..FfmpegProgress::default()
+            progress: RipProgressEvent {
+                phase: RipPhase::Encoding,
+                progress: FfmpegProgress {
+                    elapsed: Some(Duration::from_secs(30)),
+                    ..FfmpegProgress::default()
+                },
             },
         });
 
@@ -1383,11 +1435,13 @@ mod tests {
         let input = AcceptedInput {
             path: PathBuf::from("/videos/example.mp4"),
             size: 42,
+            hierarchy: None,
         };
 
         let action = queue.enqueue_many(
             vec![(input, PathBuf::from("/music/example.mp3"))],
             RipOptions::default(),
+            DestinationPolicy::default(),
         );
 
         assert_eq!(action, Action::ProbeRequested(Vec::new()));
@@ -1445,14 +1499,25 @@ mod tests {
         let _ = enqueue(&mut queue, "first");
         let _ = enqueue(&mut queue, "second");
 
-        queue.set_output_paths(|input| {
+        queue.set_output_paths(|job| {
             Path::new("/new-output")
-                .join(input.file_name().unwrap())
+                .join(Path::new(&job.input).file_name().unwrap())
                 .with_extension("mp3")
         });
 
         assert_eq!(queue.jobs[0].output, "/new-output/first.mp3");
         assert_eq!(queue.jobs[1].output, "/new-output/second.mp3");
+    }
+
+    #[test]
+    fn destination_policy_changes_apply_to_editable_job_snapshots() {
+        let mut queue = Queue::new();
+        let _ = enqueue(&mut queue, "first");
+        queue.set_destination_policy(DestinationPolicy {
+            preserve_folder_structure: false,
+        });
+
+        assert!(!queue.jobs[0].destination_policy.preserve_folder_structure);
     }
 
     #[test]

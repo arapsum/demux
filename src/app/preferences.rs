@@ -8,7 +8,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result, model::encoding::RipOptions};
+use crate::{
+    Error, Result,
+    model::{encoding::RipOptions, source::DestinationPolicy},
+};
 
 const PREFERENCES_FILENAME: &str = "settings.json";
 static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
@@ -20,9 +23,16 @@ static WRITER: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 struct Preferences {
     version: u8,
     encoding: RipOptions,
+    destination: DestinationPolicy,
 }
 
-pub(crate) async fn load() -> Result<RipOptions> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreferenceDefaults {
+    pub encoding: RipOptions,
+    pub destination: DestinationPolicy,
+}
+
+pub(crate) async fn load() -> Result<PreferenceDefaults> {
     load_from(&preferences_path()?).await
 }
 
@@ -30,7 +40,11 @@ pub(crate) fn next_revision() -> u64 {
     NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
 }
 
-pub(crate) async fn save(encoding: RipOptions, revision: u64) -> Result<()> {
+pub(crate) async fn save(
+    encoding: RipOptions,
+    destination: DestinationPolicy,
+    revision: u64,
+) -> Result<()> {
     let _guard = WRITER
         .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
@@ -39,14 +53,17 @@ pub(crate) async fn save(encoding: RipOptions, revision: u64) -> Result<()> {
         return Ok(());
     }
     LATEST_REVISION.store(revision, Ordering::Release);
-    save_to(&preferences_path()?, encoding).await
+    save_to(&preferences_path()?, encoding, destination).await
 }
 
-async fn load_from(path: &Path) -> Result<RipOptions> {
+async fn load_from(path: &Path) -> Result<PreferenceDefaults> {
     let contents = match tokio::fs::read(path).await {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(RipOptions::default());
+            return Ok(PreferenceDefaults {
+                encoding: RipOptions::default(),
+                destination: DestinationPolicy::default(),
+            });
         }
         Err(source) => {
             return Err(Error::PreferencesRead {
@@ -60,10 +77,13 @@ async fn load_from(path: &Path) -> Result<RipOptions> {
             path: path.to_path_buf(),
             source,
         })?;
-    Ok(preferences.encoding)
+    Ok(PreferenceDefaults {
+        encoding: preferences.encoding,
+        destination: preferences.destination,
+    })
 }
 
-async fn save_to(path: &Path, encoding: RipOptions) -> Result<()> {
+async fn save_to(path: &Path, encoding: RipOptions, destination: DestinationPolicy) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| Error::PreferencesDirectoryUnavailable)?;
@@ -74,8 +94,9 @@ async fn save_to(path: &Path, encoding: RipOptions) -> Result<()> {
             source,
         })?;
     let contents = serde_json::to_vec_pretty(&Preferences {
-        version: 1,
+        version: 2,
         encoding,
+        destination,
     })?;
     tokio::fs::write(path, contents)
         .await
@@ -132,7 +153,13 @@ mod tests {
     async fn missing_preferences_use_valid_defaults() {
         let path = temporary_settings_path("missing-preferences");
 
-        assert_eq!(load_from(&path).await.unwrap(), RipOptions::default());
+        assert_eq!(
+            load_from(&path).await.unwrap(),
+            PreferenceDefaults {
+                encoding: RipOptions::default(),
+                destination: DestinationPolicy::default(),
+            }
+        );
     }
 
     #[tokio::test]
@@ -145,8 +172,10 @@ mod tests {
             ..RipOptions::default()
         };
 
-        save_to(&path, options).await.unwrap();
-        assert_eq!(load_from(&path).await.unwrap(), options);
+        save_to(&path, options, DestinationPolicy::default())
+            .await
+            .unwrap();
+        assert_eq!(load_from(&path).await.unwrap().encoding, options);
 
         tokio::fs::remove_dir_all(path.parent().unwrap())
             .await

@@ -24,6 +24,10 @@ pub enum FFmpegError {
     /// unsuccessfully.
     #[error("ffmpeg exited with {status}: {stderr}")]
     ProcessFailed { status: ExitStatus, stderr: String },
+    #[error("ffmpeg loudness analysis did not return a measurement; normalization cannot continue")]
+    LoudnessMeasurementMissing,
+    #[error("ffmpeg loudness analysis returned an invalid measurement: {0}")]
+    LoudnessMeasurementInvalid(String),
 }
 
 pub type FFmpegResult<T> = std::result::Result<T, FFmpegError>;

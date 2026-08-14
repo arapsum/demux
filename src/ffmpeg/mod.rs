@@ -2,6 +2,7 @@ mod cancellation;
 mod command;
 mod dependencies;
 mod error;
+mod normalization;
 mod progress;
 
 pub use crate::model::encoding::{
@@ -16,5 +17,9 @@ pub use self::{
     },
     dependencies::{Dependencies, DependencyState, detect_dependencies},
     error::{DependencyError, FFmpegError, FFmpegResult},
-    progress::{FfmpegProgress, ProgressParser, ProgressStatus},
+    normalization::{
+        FILTER_TRUE_PEAK, LRA_CEILING, LoudnessMeasurement, OUTPUT_TRUE_PEAK_LIMIT,
+        TARGET_INTEGRATED_LUFS,
+    },
+    progress::{FfmpegProgress, ProgressParser, ProgressStatus, RipPhase, RipProgressEvent},
 };

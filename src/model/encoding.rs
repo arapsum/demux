@@ -177,6 +177,8 @@ pub struct RipOptions {
     pub embed_metadata: bool,
     #[serde(default = "default_enabled")]
     pub extract_artwork: bool,
+    #[serde(default)]
+    pub normalize_audio: bool,
 }
 
 impl Default for RipOptions {
@@ -188,6 +190,7 @@ impl Default for RipOptions {
             channels: ChannelMode::default(),
             embed_metadata: true,
             extract_artwork: true,
+            normalize_audio: false,
         }
     }
 }
@@ -242,6 +245,7 @@ mod tests {
                 channels: ChannelMode::Mono,
                 embed_metadata: true,
                 extract_artwork: true,
+                normalize_audio: false,
             }
         );
         assert_eq!(
@@ -267,5 +271,6 @@ mod tests {
 
         assert!(options.embed_metadata);
         assert!(options.extract_artwork);
+        assert!(!options.normalize_audio);
     }
 }

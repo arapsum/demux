@@ -6,11 +6,11 @@ use crate::{
     Error, Result,
     app::{output, preferences},
     ffmpeg::{
-        self, CancellationSignal, Dependencies, FfmpegAudioRipper, FfmpegProgress, RipRequest,
+        self, CancellationSignal, Dependencies, FfmpegAudioRipper, RipProgressEvent, RipRequest,
         RipTermination, TokioProcessRunner,
     },
     ffprobe,
-    model::{encoding::RipOptions, job::JobId, media::MediaInfo},
+    model::{encoding::RipOptions, job::JobId, media::MediaInfo, source::DestinationPolicy},
 };
 
 pub const PROBE_CONCURRENCY: usize = 4;
@@ -31,7 +31,7 @@ pub async fn check_dependencies() -> Result<Dependencies> {
     Ok(tokio::task::spawn_blocking(ffmpeg::detect_dependencies).await??)
 }
 
-pub async fn load_preferences() -> Result<RipOptions> {
+pub async fn load_preferences() -> Result<preferences::PreferenceDefaults> {
     preferences::load().await
 }
 
@@ -39,8 +39,12 @@ pub fn next_preferences_revision() -> u64 {
     preferences::next_revision()
 }
 
-pub async fn save_preferences(options: RipOptions, revision: u64) -> Result<()> {
-    preferences::save(options, revision).await
+pub async fn save_preferences(
+    options: RipOptions,
+    destination: DestinationPolicy,
+    revision: u64,
+) -> Result<()> {
+    preferences::save(options, destination, revision).await
 }
 
 /// Probes one media input through the production FFprobe adapter.
@@ -55,7 +59,7 @@ pub async fn probe(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
 pub async fn rip_with_progress(
     job_id: JobId,
     request: RipRequest,
-    progress: tokio::sync::mpsc::Sender<FfmpegProgress>,
+    progress: tokio::sync::mpsc::Sender<RipProgressEvent>,
     cancellation: CancellationSignal,
 ) -> Result<RipTermination> {
     let span = info_span!("audio_rip_progress_job", job_id = job_id.0);
@@ -96,6 +100,12 @@ pub async fn resolve_output(job_id: JobId, requested: PathBuf) -> Result<PathBuf
             .await
             .map_err(|source| Error::OutputInspection {
                 path: requested.clone(),
+                source,
+            })?;
+        output::ensure_output_parent(&resolved)
+            .await
+            .map_err(|source| Error::OutputInspection {
+                path: resolved.clone(),
                 source,
             })?;
         tracing::debug!(requested = %requested.display(), resolved = %resolved.display(), "resolved collision-safe output");

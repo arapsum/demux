@@ -69,6 +69,7 @@ impl Demux {
                 self.queue.selected(),
                 self.queue.run_progress(),
                 self.can_start(),
+                self.queue.has_folder_hierarchy(),
             )
             .map(Message::OutputSettings)
     }

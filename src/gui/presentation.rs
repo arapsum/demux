@@ -57,6 +57,10 @@ impl From<&JobStatus> for StatusPresentation {
                 label: "Queued",
                 color: TEXT_MUTED,
             },
+            JobStatus::Analyzing => Self {
+                label: "Analyzing loudness…",
+                color: WARNING,
+            },
             JobStatus::Ripping => Self {
                 label: "Ripping…",
                 color: ACCENT,

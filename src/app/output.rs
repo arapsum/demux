@@ -1,5 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use crate::model::{
+    encoding::OutputFormat,
+    source::{DestinationPolicy, SourceHierarchy},
+};
+
 const RIP_TARGET_EXTENSION: &str = "mp3";
 
 pub(crate) async fn available_output_path(requested: &Path) -> std::io::Result<PathBuf> {
@@ -30,7 +35,7 @@ pub(crate) async fn available_output_path(requested: &Path) -> std::io::Result<P
     unreachable!("the numeric output suffix space is unbounded")
 }
 
-pub(super) fn output_path(
+pub(crate) fn output_path(
     input: &str,
     output_directory: Option<&str>,
     output_filename: Option<&str>,
@@ -51,6 +56,51 @@ pub(super) fn output_path(
     );
 
     directory.join(filename).to_string_lossy().into_owned()
+}
+
+/// Derives a destination while preserving the relative path of a folder
+/// import when that policy is enabled.
+pub(crate) fn destination_path(
+    input: &Path,
+    hierarchy: Option<&SourceHierarchy>,
+    output_directory: Option<&Path>,
+    format: OutputFormat,
+    policy: DestinationPolicy,
+) -> PathBuf {
+    let filename = input
+        .file_name()
+        .map_or_else(|| PathBuf::from("output"), PathBuf::from)
+        .with_extension(format.extension());
+    let base = output_directory.map_or_else(
+        || {
+            hierarchy
+                .filter(|_| policy.preserve_folder_structure)
+                .map_or_else(
+                    || input.parent().map_or_else(PathBuf::new, PathBuf::from),
+                    |source| source.root().to_path_buf(),
+                )
+        },
+        PathBuf::from,
+    );
+
+    if policy.preserve_folder_structure
+        && let Some(hierarchy) = hierarchy
+    {
+        return base
+            .join(hierarchy.relative_path())
+            .with_extension(format.extension());
+    }
+    base.join(filename)
+}
+
+pub(crate) async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
+    let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    else {
+        return Ok(());
+    };
+    tokio::fs::create_dir_all(parent).await
 }
 
 #[cfg(test)]
@@ -92,6 +142,36 @@ mod tests {
         let output = output_path("/videos/reality.mp4", Some("/music"), Some("track.mp3"));
 
         assert_eq!(output, "/music/track.mp3");
+    }
+
+    #[test]
+    fn preserves_a_folder_import_relative_to_its_selected_root() {
+        let hierarchy = SourceHierarchy::new("/videos", "Season 1/episode.mp4").unwrap();
+        let output = destination_path(
+            Path::new("/videos/Season 1/episode.mp4"),
+            Some(&hierarchy),
+            Some(Path::new("/music")),
+            OutputFormat::Mp3,
+            DestinationPolicy::default(),
+        );
+
+        assert_eq!(output, PathBuf::from("/music/Season 1/episode.mp3"));
+    }
+
+    #[test]
+    fn flattening_a_folder_import_uses_only_the_filename() {
+        let hierarchy = SourceHierarchy::new("/videos", "Season 1/episode.mp4").unwrap();
+        let output = destination_path(
+            Path::new("/videos/Season 1/episode.mp4"),
+            Some(&hierarchy),
+            Some(Path::new("/music")),
+            OutputFormat::Mp3,
+            DestinationPolicy {
+                preserve_folder_structure: false,
+            },
+        );
+
+        assert_eq!(output, PathBuf::from("/music/episode.mp3"));
     }
 
     #[tokio::test]

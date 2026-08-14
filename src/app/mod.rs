@@ -1,6 +1,6 @@
 mod cli;
 pub(crate) mod intake;
-mod output;
+pub(crate) mod output;
 pub(crate) mod preferences;
 pub(crate) mod queue_runner;
 pub(crate) mod runtime;

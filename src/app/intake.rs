@@ -1,5 +1,7 @@
 use std::{collections::HashSet, path::PathBuf};
 
+use crate::model::source::SourceHierarchy;
+
 pub const SUPPORTED_EXTENSIONS: &[&str] =
     &["mp4", "mkv", "mov", "avi", "wmv", "flv", "mpeg", "mpg"];
 
@@ -19,14 +21,15 @@ pub struct IntakeResult {
 pub struct AcceptedInput {
     pub path: PathBuf,
     pub size: u64,
+    pub hierarchy: Option<SourceHierarchy>,
 }
 
 pub async fn discover(inputs: Vec<PathBuf>, existing: Vec<PathBuf>) -> IntakeResult {
     let mut result = IntakeResult::default();
     let mut seen: HashSet<PathBuf> = existing.into_iter().collect();
-    let mut pending: Vec<_> = inputs.into_iter().rev().collect();
+    let mut pending: Vec<_> = inputs.into_iter().rev().map(|path| (path, None)).collect();
 
-    while let Some(path) = pending.pop() {
+    while let Some((path, root)) = pending.pop() {
         let metadata = match tokio::fs::symlink_metadata(&path).await {
             Ok(metadata) => metadata,
             Err(error) => {
@@ -47,6 +50,20 @@ pub async fn discover(inputs: Vec<PathBuf>, existing: Vec<PathBuf>) -> IntakeRes
         }
 
         if metadata.is_dir() {
+            let root = if let Some(root) = root {
+                Some(root)
+            } else {
+                match tokio::fs::canonicalize(&path).await {
+                    Ok(root) => Some(root),
+                    Err(error) => {
+                        result.rejected.push(RejectedInput {
+                            path,
+                            reason: format!("Could not resolve this folder: {error}"),
+                        });
+                        continue;
+                    }
+                }
+            };
             let mut directory = match tokio::fs::read_dir(&path).await {
                 Ok(directory) => directory,
                 Err(error) => {
@@ -72,7 +89,12 @@ pub async fn discover(inputs: Vec<PathBuf>, existing: Vec<PathBuf>) -> IntakeRes
                 }
             }
             children.sort();
-            pending.extend(children.into_iter().rev());
+            pending.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, root.clone())),
+            );
             continue;
         }
 
@@ -85,16 +107,34 @@ pub async fn discover(inputs: Vec<PathBuf>, existing: Vec<PathBuf>) -> IntakeRes
         }
 
         match tokio::fs::canonicalize(&path).await {
-            Ok(canonical) if seen.insert(canonical.clone()) => {
-                result.accepted.push(AcceptedInput {
-                    path: canonical,
-                    size: metadata.len(),
+            Ok(canonical) => {
+                let hierarchy = root.as_ref().and_then(|root| {
+                    canonical
+                        .strip_prefix(root)
+                        .ok()
+                        .and_then(|relative| SourceHierarchy::new(root.clone(), relative).ok())
                 });
+                if seen.insert(canonical.clone()) {
+                    result.accepted.push(AcceptedInput {
+                        path: canonical,
+                        size: metadata.len(),
+                        hierarchy,
+                    });
+                } else {
+                    if let Some(existing) = result
+                        .accepted
+                        .iter_mut()
+                        .find(|existing| existing.path == canonical)
+                        && more_specific(hierarchy.as_ref(), existing.hierarchy.as_ref())
+                    {
+                        existing.hierarchy = hierarchy;
+                    }
+                    result.rejected.push(RejectedInput {
+                        path,
+                        reason: "This file is already in the queue".into(),
+                    });
+                }
             }
-            Ok(_) => result.rejected.push(RejectedInput {
-                path,
-                reason: "This file is already in the queue".into(),
-            }),
             Err(error) => result.rejected.push(RejectedInput {
                 path,
                 reason: format!("Could not resolve this file: {error}"),
@@ -103,6 +143,16 @@ pub async fn discover(inputs: Vec<PathBuf>, existing: Vec<PathBuf>) -> IntakeRes
     }
 
     result
+}
+
+fn more_specific(candidate: Option<&SourceHierarchy>, current: Option<&SourceHierarchy>) -> bool {
+    match (candidate, current) {
+        (Some(candidate), Some(current)) => {
+            candidate.root().components().count() > current.root().components().count()
+        }
+        (Some(_), None) => true,
+        _ => false,
+    }
 }
 
 #[must_use]
@@ -167,6 +217,37 @@ mod tests {
         assert_eq!(names, ["a.mp4", "b.mkv", "c.mov"]);
         assert_eq!(result.rejected.len(), 1);
         assert_eq!(result.accepted[0].size, 5);
+        let root = tokio::fs::canonicalize(&root).await.unwrap();
+        assert_eq!(
+            result.accepted[2].hierarchy.as_ref().unwrap().root(),
+            root.as_path()
+        );
+        assert_eq!(
+            result.accepted[2]
+                .hierarchy
+                .as_ref()
+                .unwrap()
+                .relative_path(),
+            std::path::Path::new("nested/c.mov")
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn direct_file_selection_has_no_folder_provenance() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("demux-direct-{suffix}"));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let input = root.join("video.mp4");
+        tokio::fs::write(&input, b"video").await.unwrap();
+
+        let result = discover(vec![input], Vec::new()).await;
+
+        assert_eq!(result.accepted.len(), 1);
+        assert!(result.accepted[0].hierarchy.is_none());
         tokio::fs::remove_dir_all(root).await.unwrap();
     }
 

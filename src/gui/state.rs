@@ -38,8 +38,12 @@ impl Default for Demux {
 impl Demux {
     pub(crate) fn refresh_output_path(&mut self) {
         let settings = &self.output_settings;
-        self.queue
-            .set_output_paths(|input| settings.output_path(input));
+        self.queue.set_output_paths(|job| {
+            settings.output_path(
+                std::path::Path::new(&job.input),
+                job.source_hierarchy.as_ref(),
+            )
+        });
     }
 
     pub(crate) fn refresh_encoding_options(&mut self) {

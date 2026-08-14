@@ -7,10 +7,12 @@ use iced::widget::{
 use iced::{Element, Fill, FillPortion, Font, Padding, Task};
 
 use crate::{
+    app::output,
     ffmpeg::DependencyState,
     model::{
         encoding::{ChannelMode, Mp3Bitrate, OutputFormat, RipOptions, SampleRate},
         job::{JobStatus, RipJob},
+        source::DestinationPolicy,
     },
 };
 
@@ -27,6 +29,8 @@ pub enum Message {
     ChannelsChanged(ChannelMode),
     EmbedMetadataToggled(bool),
     ExtractArtworkToggled(bool),
+    NormalizeAudioToggled(bool),
+    PreserveFoldersToggled(bool),
     FolderChanged(String),
     Browse,
     FolderSelected(Option<PathBuf>),
@@ -38,6 +42,7 @@ pub(crate) enum Action {
     None,
     OutputChanged,
     EncodingChanged(RipOptions),
+    DestinationChanged(DestinationPolicy),
     StartRipping,
 }
 
@@ -45,6 +50,7 @@ pub(crate) enum Action {
 pub(crate) struct OutputSettings {
     folder: String,
     options: RipOptions,
+    destination: DestinationPolicy,
     defaults_modified: bool,
 }
 
@@ -53,6 +59,7 @@ impl OutputSettings {
         Self {
             folder: String::new(),
             options: RipOptions::default(),
+            destination: DestinationPolicy::default(),
             defaults_modified: false,
         }
     }
@@ -67,6 +74,8 @@ impl OutputSettings {
                     | Message::ChannelsChanged(_)
                     | Message::EmbedMetadataToggled(_)
                     | Message::ExtractArtworkToggled(_)
+                    | Message::NormalizeAudioToggled(_)
+                    | Message::PreserveFoldersToggled(_)
                     | Message::FolderChanged(_)
                     | Message::Browse
                     | Message::FolderSelected(_)
@@ -106,6 +115,16 @@ impl OutputSettings {
                 self.defaults_modified = true;
                 (Action::EncodingChanged(self.options), Task::none())
             }
+            Message::NormalizeAudioToggled(enabled) => {
+                self.options.normalize_audio = enabled;
+                self.defaults_modified = true;
+                (Action::EncodingChanged(self.options), Task::none())
+            }
+            Message::PreserveFoldersToggled(enabled) => {
+                self.destination.preserve_folder_structure = enabled;
+                self.defaults_modified = true;
+                (Action::DestinationChanged(self.destination), Task::none())
+            }
             Message::FolderChanged(folder) => {
                 self.folder = folder;
                 (Action::OutputChanged, Task::none())
@@ -125,9 +144,15 @@ impl OutputSettings {
         }
     }
 
-    pub(crate) fn set_default_from_input(&mut self, input: &Path) {
+    pub(crate) fn set_default_from_input(
+        &mut self,
+        input: &Path,
+        hierarchy: Option<&crate::model::source::SourceHierarchy>,
+    ) {
         if self.folder.is_empty()
-            && let Some(parent) = input.parent()
+            && let Some(parent) = hierarchy
+                .map(|source| source.root())
+                .or_else(|| input.parent())
         {
             self.folder = parent.to_string_lossy().into_owned();
         }
@@ -141,28 +166,35 @@ impl OutputSettings {
         self.options
     }
 
-    pub(crate) fn apply_loaded_defaults(&mut self, options: RipOptions) -> bool {
-        if self.defaults_modified || self.options == options {
+    pub(crate) const fn destination_policy(&self) -> DestinationPolicy {
+        self.destination
+    }
+
+    pub(crate) fn apply_loaded_defaults(
+        &mut self,
+        options: RipOptions,
+        destination: DestinationPolicy,
+    ) -> bool {
+        if self.defaults_modified || (self.options == options && self.destination == destination) {
             return false;
         }
         self.options = options;
+        self.destination = destination;
         true
     }
 
-    pub(crate) fn output_path(&self, input: &Path) -> PathBuf {
-        let filename = input
-            .file_name()
-            .map_or_else(|| PathBuf::from("output"), PathBuf::from)
-            .with_extension(self.options.format.extension());
-
-        if self.folder.trim().is_empty() {
-            input
-                .parent()
-                .map_or_else(PathBuf::new, PathBuf::from)
-                .join(filename)
-        } else {
-            Path::new(self.folder.trim()).join(filename)
-        }
+    pub(crate) fn output_path(
+        &self,
+        input: &Path,
+        hierarchy: Option<&crate::model::source::SourceHierarchy>,
+    ) -> PathBuf {
+        output::destination_path(
+            input,
+            hierarchy,
+            (!self.folder.trim().is_empty()).then(|| Path::new(self.folder.trim())),
+            self.options.format,
+            self.destination,
+        )
     }
 
     pub(crate) fn view<'a>(
@@ -172,6 +204,7 @@ impl OutputSettings {
         selected_job: Option<&RipJob>,
         run_progress: Option<(usize, usize)>,
         can_start: bool,
+        has_folder_hierarchy: bool,
     ) -> Element<'a, Message> {
         let dependencies = DependencyPresentation::from(dependency_state);
         let output_locked = run_progress.is_some();
@@ -182,7 +215,13 @@ impl OutputSettings {
                     |status| status.label.into(),
                 )
             },
-            |(position, total)| format!("Ripping {position} of {total}"),
+            |(position, total)| {
+                if selected_job.is_some_and(|job| matches!(job.status, JobStatus::Analyzing)) {
+                    format!("Analyzing loudness {position} of {total}")
+                } else {
+                    format!("Ripping audio {position} of {total}")
+                }
+            },
         );
 
         let output_input = text_input("Choose an output folder", &self.folder)
@@ -276,6 +315,16 @@ impl OutputSettings {
             .label("Extract artwork when available")
             .text_size(13)
             .on_toggle_maybe((!output_locked).then_some(Message::ExtractArtworkToggled));
+        let normalize_audio = checkbox(self.options.normalize_audio)
+            .label("Normalize audio (EBU R128)")
+            .text_size(13)
+            .on_toggle_maybe((!output_locked).then_some(Message::NormalizeAudioToggled));
+        let preserve_folders = checkbox(self.destination.preserve_folder_structure)
+            .label("Preserve folder structure")
+            .text_size(13)
+            .on_toggle_maybe(
+                (!output_locked && has_folder_hierarchy).then_some(Message::PreserveFoldersToggled),
+            );
 
         let controls = column![
             column![text("Output format").size(13).color(TEXT_MUTED), format,].spacing(7),
@@ -292,13 +341,27 @@ impl OutputSettings {
             ]
             .spacing(10),
             column![text("Audio channels").size(13).color(TEXT_MUTED), channels,].spacing(7),
-            column![embed_metadata, extract_artwork].spacing(10),
+            column![
+                embed_metadata,
+                extract_artwork,
+                normalize_audio,
+                preserve_folders
+            ]
+            .spacing(10),
             column![
                 text("Output folder").size(13).color(TEXT_MUTED),
                 row![output_input.width(Fill), browse].spacing(8),
-                text("The MP3 filename is derived from the selected video.")
-                    .size(12)
-                    .color(TEXT_MUTED),
+                text(
+                    if has_folder_hierarchy && self.destination.preserve_folder_structure {
+                        "Folder imports keep paths relative to the selected folder."
+                    } else if has_folder_hierarchy {
+                        "Folder structure is disabled; outputs use the source filename."
+                    } else {
+                        "The MP3 filename is derived from the selected video."
+                    }
+                )
+                .size(12)
+                .color(TEXT_MUTED),
             ]
             .spacing(7),
             selected_job_detail(selected_job, run_progress, selected_status, dependencies,),
@@ -358,7 +421,7 @@ fn selected_job_detail(
     if let Some(job) = job {
         detail = detail.push(
             text(format!(
-                "Output: {} · {} · {} · {}",
+                "Output: {} · {} · {} · {} · {}",
                 job.options.format,
                 job.options.bitrate,
                 if job.options.embed_metadata {
@@ -370,11 +433,35 @@ fn selected_job_detail(
                     "artwork on"
                 } else {
                     "artwork off"
+                },
+                if job.options.normalize_audio {
+                    "normalization on"
+                } else {
+                    "normalization off"
                 }
             ))
             .size(12)
             .color(TEXT_MUTED),
         );
+        detail = detail
+            .push(
+                text(format!("Destination: {}", job.output))
+                    .size(12)
+                    .color(TEXT_MUTED),
+            )
+            .push(
+                text(
+                    if job.destination_policy.preserve_folder_structure
+                        && job.source_hierarchy.is_some()
+                    {
+                        "Folder structure preserved from the selected root"
+                    } else {
+                        "Flat output destination"
+                    },
+                )
+                .size(12)
+                .color(TEXT_MUTED),
+            );
         if let Some(metadata) = &job.metadata {
             let title = metadata
                 .tags
@@ -446,11 +533,11 @@ mod tests {
     fn defaults_to_the_input_directory() {
         let mut settings = OutputSettings::new();
 
-        settings.set_default_from_input(Path::new("/videos/example.mov"));
+        settings.set_default_from_input(Path::new("/videos/example.mov"), None);
 
         assert_eq!(settings.folder, "/videos");
         assert_eq!(
-            settings.output_path(Path::new("/videos/example.mov")),
+            settings.output_path(Path::new("/videos/example.mov"), None),
             PathBuf::from("/videos/example.mp3")
         );
     }
@@ -463,7 +550,7 @@ mod tests {
 
         assert_eq!(action, Action::OutputChanged);
         assert_eq!(
-            settings.output_path(Path::new("/videos/example.mov")),
+            settings.output_path(Path::new("/videos/example.mov"), None),
             PathBuf::from("/music/example.mp3")
         );
     }
@@ -544,7 +631,7 @@ mod tests {
             ..RipOptions::default()
         };
 
-        assert!(!settings.apply_loaded_defaults(loaded));
+        assert!(!settings.apply_loaded_defaults(loaded, DestinationPolicy::default()));
         assert_eq!(settings.options().channels, ChannelMode::Mono);
         assert_eq!(settings.options().bitrate, Mp3Bitrate::Kbps192);
     }

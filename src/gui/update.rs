@@ -45,9 +45,13 @@ impl Demux {
             }
             Message::PreferencesLoaded(result) => {
                 match result {
-                    Ok(options) => {
-                        if self.output_settings.apply_loaded_defaults(options) {
+                    Ok(defaults) => {
+                        if self
+                            .output_settings
+                            .apply_loaded_defaults(defaults.encoding, defaults.destination)
+                        {
                             self.refresh_encoding_options();
+                            self.refresh_output_path();
                         }
                     }
                     Err(error) => {
@@ -87,9 +91,30 @@ impl Demux {
                         let revision = runtime::next_preferences_revision();
                         return Task::batch([
                             task.map(Message::OutputSettings),
-                            Task::perform(runtime::save_preferences(options, revision), |result| {
-                                Message::PreferencesSaved(share_error(result))
-                            }),
+                            Task::perform(
+                                runtime::save_preferences(
+                                    options,
+                                    self.output_settings.destination_policy(),
+                                    revision,
+                                ),
+                                |result| Message::PreferencesSaved(share_error(result)),
+                            ),
+                        ]);
+                    }
+                    output_settings::Action::DestinationChanged(destination) => {
+                        self.queue.set_destination_policy(destination);
+                        self.refresh_output_path();
+                        let revision = runtime::next_preferences_revision();
+                        return Task::batch([
+                            task.map(Message::OutputSettings),
+                            Task::perform(
+                                runtime::save_preferences(
+                                    self.output_settings.options(),
+                                    destination,
+                                    revision,
+                                ),
+                                |result| Message::PreferencesSaved(share_error(result)),
+                            ),
                         ]);
                     }
                     output_settings::Action::StartRipping => {
@@ -166,18 +191,23 @@ impl Demux {
             }
             queue::Action::IntakeAccepted(inputs) => {
                 if let Some(input) = inputs.first() {
-                    self.output_settings.set_default_from_input(&input.path);
+                    self.output_settings
+                        .set_default_from_input(&input.path, input.hierarchy.as_ref());
                 }
                 let paths = inputs
                     .into_iter()
                     .map(|input| {
-                        let output = self.output_settings.output_path(&input.path);
+                        let output = self
+                            .output_settings
+                            .output_path(&input.path, input.hierarchy.as_ref());
                         (input, output)
                     })
                     .collect();
-                let action = self
-                    .queue
-                    .enqueue_many(paths, self.output_settings.options());
+                let action = self.queue.enqueue_many(
+                    paths,
+                    self.output_settings.options(),
+                    self.output_settings.destination_policy(),
+                );
                 self.handle_queue_action(action)
             }
             queue::Action::ProbeRequested(_)
@@ -384,17 +414,19 @@ mod tests {
 
     fn enqueue(state: &mut Demux, input: &str) -> JobId {
         let input = PathBuf::from(input);
-        state.output_settings.set_default_from_input(&input);
-        let output = state.output_settings.output_path(&input);
+        state.output_settings.set_default_from_input(&input, None);
+        let output = state.output_settings.output_path(&input, None);
         let _ = state.queue.enqueue_many(
             vec![(
                 crate::app::intake::AcceptedInput {
                     path: input,
                     size: 42,
+                    hierarchy: None,
                 },
                 output,
             )],
             state.output_settings.options(),
+            state.output_settings.destination_policy(),
         );
         state.queue.selected().unwrap().id.clone()
     }
@@ -509,6 +541,7 @@ mod tests {
                 accepted: vec![crate::app::intake::AcceptedInput {
                     path: PathBuf::from("/videos/example.mp4"),
                     size: 42,
+                    hierarchy: None,
                 }],
                 rejected: Vec::new(),
             },

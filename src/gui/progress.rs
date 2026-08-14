@@ -5,7 +5,7 @@ use iced::widget::{button, column, container, progress_bar, row, space, text};
 use iced::{Element, Fill, Font, Padding};
 
 use crate::{
-    ffmpeg::{FfmpegProgress, RipRequest},
+    ffmpeg::{RipPhase, RipProgressEvent, RipRequest},
     model::{
         encoding::RipOptions,
         job::{JobId, RipProgress},
@@ -42,7 +42,7 @@ pub enum Message {
     },
     Advanced {
         job_id: JobId,
-        progress: FfmpegProgress,
+        progress: RipProgressEvent,
     },
     Finished {
         job_id: JobId,
@@ -65,6 +65,7 @@ struct ActiveProgress {
     job_id: JobId,
     filename: String,
     options: RipOptions,
+    phase: RipPhase,
     progress: RipProgress,
     status: Status,
 }
@@ -90,6 +91,11 @@ impl Progress {
                     job_id,
                     filename: filename(&request.input),
                     options: request.options,
+                    phase: if request.options.normalize_audio {
+                        RipPhase::Analyzing
+                    } else {
+                        RipPhase::Encoding
+                    },
                     progress,
                     status: Status::Running,
                 });
@@ -103,11 +109,15 @@ impl Progress {
                 else {
                     return Action::None;
                 };
+                if active.phase != progress.phase {
+                    active.phase = progress.phase;
+                    active.progress.reset_for_phase();
+                }
                 active.progress.update(
-                    progress.elapsed,
-                    progress.speed,
-                    progress.bitrate_kbps,
-                    progress.output_size,
+                    progress.progress.elapsed,
+                    progress.progress.speed,
+                    progress.progress.bitrate_kbps,
+                    progress.progress.output_size,
                 );
                 Action::None
             }
@@ -188,7 +198,10 @@ impl Progress {
         };
 
         let status_label = match active.status {
-            Status::Running => "Ripping",
+            Status::Running => match active.phase {
+                RipPhase::Analyzing => "Analyzing loudness (1 of 2)",
+                RipPhase::Encoding => "Ripping audio (2 of 2)",
+            },
             Status::Cancelling => "Cancelling",
             Status::Completed => "Completed",
             Status::Cancelled => "Cancelled",
@@ -213,7 +226,7 @@ impl Progress {
             0.0
         };
 
-        let metrics = row![
+        let mut metrics = row![
             metric("Elapsed", format_duration(active.progress.elapsed)),
             metric(
                 "Remaining",
@@ -231,24 +244,27 @@ impl Progress {
                     .map(|speed| format!("{speed:.2}×"))
                     .unwrap_or_else(|| "Unknown".to_owned())
             ),
-            metric(
-                "Bitrate",
-                active
-                    .progress
-                    .bitrate_kbps
-                    .map(|bitrate| format!("{bitrate:.0} kbps"))
-                    .unwrap_or_else(|| format!("{} target", active.options.bitrate))
-            ),
-            metric(
-                "Output size",
-                active
-                    .progress
-                    .output_size
-                    .map(format_size)
-                    .unwrap_or_else(|| "Unknown".to_owned())
-            ),
         ]
         .spacing(18);
+        if active.phase == RipPhase::Encoding {
+            metrics = metrics
+                .push(metric(
+                    "Bitrate",
+                    active
+                        .progress
+                        .bitrate_kbps
+                        .map(|bitrate| format!("{bitrate:.0} kbps"))
+                        .unwrap_or_else(|| format!("{} target", active.options.bitrate)),
+                ))
+                .push(metric(
+                    "Output size",
+                    active
+                        .progress
+                        .output_size
+                        .map(format_size)
+                        .unwrap_or_else(|| "Unknown".to_owned()),
+                ));
+        }
 
         let cancel: Element<'_, Message> = match active.status {
             Status::Running | Status::Cancelling => {
@@ -367,6 +383,8 @@ fn format_size(bytes: u64) -> String {
 mod tests {
     use std::time::Duration;
 
+    use crate::ffmpeg::FfmpegProgress;
+
     use super::*;
 
     fn started() -> Message {
@@ -386,9 +404,12 @@ mod tests {
         state.update(started());
         state.update(Message::Advanced {
             job_id: JobId::new(99),
-            progress: FfmpegProgress {
-                elapsed: Some(Duration::from_secs(60)),
-                ..FfmpegProgress::default()
+            progress: RipProgressEvent {
+                phase: RipPhase::Encoding,
+                progress: FfmpegProgress {
+                    elapsed: Some(Duration::from_secs(60)),
+                    ..FfmpegProgress::default()
+                },
             },
         });
         assert_eq!(
@@ -398,10 +419,13 @@ mod tests {
 
         state.update(Message::Advanced {
             job_id: JobId::new(1),
-            progress: FfmpegProgress {
-                elapsed: Some(Duration::from_secs(60)),
-                speed: Some(2.0),
-                ..FfmpegProgress::default()
+            progress: RipProgressEvent {
+                phase: RipPhase::Encoding,
+                progress: FfmpegProgress {
+                    elapsed: Some(Duration::from_secs(60)),
+                    speed: Some(2.0),
+                    ..FfmpegProgress::default()
+                },
             },
         });
         state.update(Message::Finished {

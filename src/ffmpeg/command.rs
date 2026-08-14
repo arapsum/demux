@@ -11,7 +11,8 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 use crate::ffmpeg::{
-    CancellationSignal, FFmpegError, FFmpegResult, FfmpegProgress, ProgressParser,
+    CancellationSignal, FFmpegError, FFmpegResult, FILTER_TRUE_PEAK, FfmpegProgress, LRA_CEILING,
+    LoudnessMeasurement, ProgressParser, RipPhase, RipProgressEvent, TARGET_INTEGRATED_LUFS,
 };
 use crate::model::{encoding::RipOptions, media::MediaInfo};
 
@@ -98,6 +99,17 @@ pub struct FfmpegCommandBuilder;
 impl FfmpegCommandBuilder {
     #[must_use]
     pub fn build_rip(request: &RipRequest) -> Command {
+        Self::build_rip_with_measurement(request, None)
+            .expect("build_rip is only valid for non-normalized requests")
+    }
+
+    pub fn build_rip_with_measurement(
+        request: &RipRequest,
+        measurement: Option<&LoudnessMeasurement>,
+    ) -> FFmpegResult<Command> {
+        if request.options.normalize_audio && measurement.is_none() {
+            return Err(FFmpegError::LoudnessMeasurementMissing);
+        }
         let mut command = Command::new("ffmpeg");
         command
             .arg("-n")
@@ -115,6 +127,19 @@ impl FfmpegCommandBuilder {
             .arg(request.options.sample_rate.hz().to_string())
             .arg("-ac")
             .arg(request.options.channels.channels().to_string());
+
+        if request.options.normalize_audio {
+            let measurement = measurement.expect("validated above");
+            let dual_mono = dual_mono(request);
+            command.arg("-af").arg(format!(
+                "loudnorm=I={TARGET_INTEGRATED_LUFS}:LRA={LRA_CEILING}:TP={FILTER_TRUE_PEAK}:measured_I={}:measured_LRA={}:measured_TP={}:measured_thresh={}:offset={}:linear=true:dual_mono={dual_mono}",
+                measurement.integrated_lufs,
+                measurement.loudness_range,
+                measurement.true_peak,
+                measurement.threshold,
+                measurement.offset,
+            ));
+        }
 
         if request.options.embed_metadata
             && let Some(metadata) = &request.metadata
@@ -145,8 +170,39 @@ impl FfmpegCommandBuilder {
             .arg("pipe:1")
             .arg("-nostats")
             .arg(&request.output);
+        Ok(command)
+    }
+
+    #[must_use]
+    pub fn build_loudness_analysis(request: &RipRequest) -> Command {
+        let dual_mono = dual_mono(request);
+        let mut command = Command::new("ffmpeg");
+        command
+            .arg("-hide_banner")
+            .arg("-i")
+            .arg(&request.input)
+            .arg("-map")
+            .arg("0:a:0")
+            .arg("-af")
+            .arg(format!(
+                "loudnorm=I={TARGET_INTEGRATED_LUFS}:LRA={LRA_CEILING}:TP={FILTER_TRUE_PEAK}:dual_mono={dual_mono}:print_format=json"
+            ))
+            .arg("-f")
+            .arg("null")
+            .arg("-progress")
+            .arg("pipe:1")
+            .arg("-nostats")
+            .arg("-");
         command
     }
+}
+
+fn dual_mono(request: &RipRequest) -> bool {
+    request
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.audio.channels)
+        == Some(1)
 }
 
 /// Runs a prepared child-process command.
@@ -309,10 +365,19 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
     )]
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
         tracing::debug!("launching ffmpeg process");
+        ensure_output_parent(&request.output).await?;
 
+        let measurement = if request.options.normalize_audio {
+            Some(self.analyze(request).await?)
+        } else {
+            None
+        };
         let output = self
             .runner
-            .run(FfmpegCommandBuilder::build_rip(request))
+            .run(FfmpegCommandBuilder::build_rip_with_measurement(
+                request,
+                measurement.as_ref(),
+            )?)
             .await?;
 
         tracing::debug!(
@@ -322,6 +387,20 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
         );
 
         outcome(output)
+    }
+
+    async fn analyze(&self, request: &RipRequest) -> FFmpegResult<LoudnessMeasurement> {
+        let output = self
+            .runner
+            .run(FfmpegCommandBuilder::build_loudness_analysis(request))
+            .await?;
+        if !output.status.success() {
+            return Err(FFmpegError::ProcessFailed {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            });
+        }
+        LoudnessMeasurement::parse(&output.stderr)
     }
 }
 
@@ -342,7 +421,7 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
     pub async fn rip_with_progress(
         &self,
         request: &RipRequest,
-        progress: mpsc::Sender<FfmpegProgress>,
+        progress: mpsc::Sender<RipProgressEvent>,
     ) -> FFmpegResult<RipOutcome> {
         let (_handle, cancellation) = crate::ffmpeg::cancellation_pair();
         match self
@@ -374,14 +453,41 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
     pub async fn rip_with_progress_cancellable(
         &self,
         request: &RipRequest,
-        progress: mpsc::Sender<FfmpegProgress>,
+        progress: mpsc::Sender<RipProgressEvent>,
         cancellation: CancellationSignal,
     ) -> FFmpegResult<RipTermination> {
         tracing::debug!("launching ffmpeg process with progress reporting");
+        ensure_output_parent(&request.output).await?;
+        let measurement = if request.options.normalize_audio {
+            let exit = self
+                .run_phase(
+                    FfmpegCommandBuilder::build_loudness_analysis(request),
+                    RipPhase::Analyzing,
+                    progress.clone(),
+                    cancellation.clone(),
+                )
+                .await?;
+            match exit {
+                ProcessExit::Exited(output) => {
+                    if !output.status.success() {
+                        return Err(FFmpegError::ProcessFailed {
+                            status: output.status,
+                            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                        });
+                    }
+                    Some(LoudnessMeasurement::parse(&output.stderr)?)
+                }
+                ProcessExit::Cancelled { forced, .. } => {
+                    return Ok(RipTermination::Cancelled { forced });
+                }
+            }
+        } else {
+            None
+        };
         let exit = self
-            .runner
-            .run_with_progress(
-                FfmpegCommandBuilder::build_rip(request),
+            .run_phase(
+                FfmpegCommandBuilder::build_rip_with_measurement(request, measurement.as_ref())?,
+                RipPhase::Encoding,
                 progress,
                 cancellation,
             )
@@ -407,6 +513,49 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
             }
         }
     }
+
+    async fn run_phase(
+        &self,
+        command: Command,
+        phase: RipPhase,
+        progress: mpsc::Sender<RipProgressEvent>,
+        cancellation: CancellationSignal,
+    ) -> FFmpegResult<ProcessExit> {
+        let (sender, mut receiver) = mpsc::channel(32);
+        let process = self.runner.run_with_progress(command, sender, cancellation);
+        tokio::pin!(process);
+        let mut result = None;
+        let mut receiver_open = true;
+
+        while result.is_none() || receiver_open {
+            tokio::select! {
+                biased;
+                process_result = &mut process, if result.is_none() => {
+                    result = Some(process_result?);
+                }
+                snapshot = receiver.recv(), if receiver_open => {
+                    match snapshot {
+                        Some(snapshot) => {
+                            let _ = progress.send(RipProgressEvent { phase, progress: snapshot }).await;
+                        }
+                        None => receiver_open = false,
+                    }
+                }
+            }
+        }
+        result
+            .ok_or_else(|| FFmpegError::Io(std::io::Error::other("ffmpeg process did not return")))
+    }
+}
+
+async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
+    let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    else {
+        return Ok(());
+    };
+    tokio::fs::create_dir_all(parent).await
 }
 
 fn outcome(output: Output) -> FFmpegResult<RipOutcome> {
@@ -627,6 +776,42 @@ mod tests {
             arguments
                 .windows(2)
                 .any(|pair| pair == ["-map_metadata", "-1"])
+        );
+    }
+
+    #[test]
+    fn normalized_commands_require_measurements_and_apply_the_two_pass_filter() {
+        let request = RipRequest::with_options(
+            "input.wav",
+            "output.mp3",
+            RipOptions {
+                normalize_audio: true,
+                ..RipOptions::default()
+            },
+        );
+        assert!(matches!(
+            FfmpegCommandBuilder::build_rip_with_measurement(&request, None),
+            Err(FFmpegError::LoudnessMeasurementMissing)
+        ));
+
+        let measurement = LoudnessMeasurement {
+            integrated_lufs: -28.0,
+            loudness_range: 5.0,
+            true_peak: -2.0,
+            threshold: -38.0,
+            offset: 0.0,
+        };
+        let command =
+            FfmpegCommandBuilder::build_rip_with_measurement(&request, Some(&measurement)).unwrap();
+        let arguments: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair[0] == "-af" && pair[1].contains("I=-23:LRA=50:TP=-2"))
         );
     }
 

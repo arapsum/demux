@@ -1,4 +1,8 @@
-use super::{encoding::RipOptions, media::MediaInfo};
+use super::{
+    encoding::RipOptions,
+    media::MediaInfo,
+    source::{DestinationPolicy, SourceHierarchy},
+};
 
 use std::time::Duration;
 
@@ -42,6 +46,8 @@ pub struct RipJob {
     pub output: String,
     pub options: RipOptions,
     pub input_size: Option<u64>,
+    pub source_hierarchy: Option<SourceHierarchy>,
+    pub destination_policy: DestinationPolicy,
     pub status: JobStatus,
     pub metadata: Option<MediaInfo>,
     pub progress: RipProgress,
@@ -66,12 +72,33 @@ impl RipJob {
 
     #[must_use]
     pub fn with_options(id: JobId, input: String, output: String, options: RipOptions) -> Self {
+        Self::with_options_and_destination(
+            id,
+            input,
+            output,
+            options,
+            DestinationPolicy::default(),
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn with_options_and_destination(
+        id: JobId,
+        input: String,
+        output: String,
+        options: RipOptions,
+        destination_policy: DestinationPolicy,
+        source_hierarchy: Option<SourceHierarchy>,
+    ) -> Self {
         Self {
             id,
             input,
             output,
             options,
             input_size: None,
+            source_hierarchy,
+            destination_policy,
             status: JobStatus::Pending,
             metadata: None,
             progress: RipProgress::default(),
@@ -90,6 +117,16 @@ impl RipJob {
 
     pub(crate) fn start_ripping(&mut self) {
         self.status = JobStatus::Ripping;
+    }
+
+    pub(crate) fn start_analyzing(&mut self) {
+        self.status = JobStatus::Analyzing;
+        self.progress.reset_for_phase();
+    }
+
+    pub(crate) fn reset_for_encoding(&mut self) {
+        self.status = JobStatus::Ripping;
+        self.progress.reset_for_phase();
     }
 
     pub(crate) fn record_progress(
@@ -209,6 +246,15 @@ impl RipProgress {
         });
     }
 
+    pub(crate) fn reset_for_phase(&mut self) {
+        self.elapsed = Duration::ZERO;
+        self.percent = 0.0;
+        self.speed = None;
+        self.bitrate_kbps = None;
+        self.output_size = None;
+        self.remaining = None;
+    }
+
     pub(crate) fn finish(&mut self) {
         if !self.duration.is_zero() {
             self.elapsed = self.duration;
@@ -224,6 +270,7 @@ pub enum JobStatus {
     Probing,
     Ready,
     Queued,
+    Analyzing,
     Ripping,
     Cancelling,
     Completed,

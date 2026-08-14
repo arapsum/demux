@@ -1,5 +1,17 @@
 use std::time::Duration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RipPhase {
+    Analyzing,
+    Encoding,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RipProgressEvent {
+    pub phase: RipPhase,
+    pub progress: FfmpegProgress,
+}
+
 /// One machine-readable progress snapshot emitted by FFmpeg.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FfmpegProgress {
