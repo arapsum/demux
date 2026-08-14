@@ -157,9 +157,11 @@ channels and destination retain full width for scanability. Selectors use the
 same inset surface and 12px geometry as path fields, with violet reserved for
 hover, focus, or open state. During queue execution, values become quiet
 read-only fields so the visible settings match the active job snapshot. The
-metadata and artwork policies sit beneath the encoding selectors as two
-independent, plainly labelled checks. The controls area scrolls at the minimum
-window height while status and Start remain reachable.
+metadata, artwork, normalization, and folder-preservation policies sit beneath
+the encoding selectors as independent, plainly labelled checks. Preserve folder
+structure is visibly unavailable until a folder import supplies source-root
+provenance. The controls area scrolls at the minimum window height while status
+and Start remain reachable.
 
 ### Job Row
 
@@ -176,16 +178,18 @@ total source size without presenting it as an estimated output size.
 ### Queue Execution
 
 Start Ripping operates on every eligible row in insertion order. The active row
-uses `Ripping (n of total)` while later eligible rows say Queued; completed,
-failed, and skipped rows remain visible with textual terminal states. Intake,
-removal, and destination edits are unavailable only while the runner owns the
-queue. The final toast reports completed, failed, and skipped counts, and failed
-rows retain their detailed process error for inspection.
+uses Analyzing loudness (1 of 2) for a normalized job and Ripping audio (2 of 2)
+for its encoding pass; later eligible rows say Queued. Completed, failed, and
+skipped rows remain visible with textual terminal states. Intake, removal, and
+destination edits are unavailable only while the runner owns the queue. The
+final toast reports completed, failed, and skipped counts, and failed rows
+retain their detailed process error for inspection.
 
-The selected-job detail beneath Output Settings carries the effective metadata
-and artwork policy plus a compact title/artist/album summary. It names missing
-artwork as unavailable and unsupported formats as skipped, never presenting
-either state as an extraction failure.
+The selected-job detail beneath Output Settings carries the effective metadata,
+artwork, normalization, and folder policy plus the planned destination path and
+a compact title/artist/album summary. It names missing artwork as unavailable
+and unsupported formats as skipped, never presenting either state as an
+extraction failure.
 
 ### Progress Surface
 
@@ -193,8 +197,10 @@ The Progress surface sits beneath the queue and follows the active extraction.
 It leads with filename and explicit textual state, followed by elapsed and total
 time, a determinate bar when probed duration is known, and a clearly labelled
 indeterminate state otherwise. Compact measurements report speed, bitrate,
-output size, and estimated remaining time. Missing or malformed FFmpeg fields
-say “Unknown” rather than presenting a misleading zero, while terminal success
+output size, and estimated remaining time during encoding. Loudness analysis
+intentionally hides bitrate and output size because no encoded stream exists
+yet. Missing or malformed FFmpeg fields say “Unknown” rather than presenting a
+misleading zero, while terminal success
 sets known-duration progress to 100 percent even if a final snapshot was
 dropped under load.
 

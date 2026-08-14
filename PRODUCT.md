@@ -41,7 +41,11 @@ Demux is a cross-platform desktop utility used with local media files and locall
 - Copy an allowlisted set of source tags and compatible embedded cover art into
   MP3 outputs when enabled, while treating missing or unsupported artwork as a
   non-fatal condition.
-- Normalization and pause remain later milestones.
+- Normalize audio with a two-pass EBU R128 policy (−23 LUFS target and −1 dBTP
+  decoded ceiling) while showing analysis and encoding as separate phases.
+- Preserve the contents of selected folder imports under the output directory,
+  with traversal-safe relative paths and collision-safe filenames.
+- Pause remains a later, platform-dependent milestone.
 
 ## Brand Commitments
 

@@ -286,11 +286,21 @@ job surface explains what was found and what will be used.
 
 Purpose: complete the remaining output-policy controls in the reference.
 
+**Status: complete.** Demux uses two-pass FFmpeg loudnorm analysis for an
+accurate EBU R128 target of −23 LUFS. Encoding uses a −2 dBTP filter ceiling to
+leave MP3 codec headroom while keeping decoded output below the public −1 dBTP
+limit. Folder imports retain canonical source-root provenance and, by default,
+recreate safe paths relative to the selected folder. Both policies are captured
+per job, persisted as defaults, and surfaced in the settings and selected-job
+detail.
+
 ### Engine first
 
 - Implement EBU R128 normalization using a tested FFmpeg filter policy.
-- Decide between one-pass and two-pass normalization based on accuracy and
-  performance requirements; document the chosen trade-off.
+- Use two-pass normalization: the analysis pass measures integrated loudness,
+  range, true peak, threshold, and offset; the encoding pass applies those
+  measurements for repeatable results. The extra pass is exposed as an
+  explicit progress phase.
 - Model source roots and relative paths for folder intake.
 - Derive safe destination paths when Preserve folder structure is enabled.
 - Reject path traversal and resolve filename collisions deterministically.

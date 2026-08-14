@@ -4,9 +4,10 @@ Demux is a native Rust desktop utility for extracting audio from video files wit
 
 > **Status:** early development. Demux now has a functional first Iced shell for
 > selecting and probing multiple videos, then extracting every eligible job
-> sequentially with configurable MP3 settings, live progress, and estimates.
-> Safe queue cancellation is implemented; the complete reference interface
-> remains planned.
+> sequentially with configurable MP3 settings, two-pass EBU R128 normalization,
+> folder-preserving destinations, live progress, and estimates. Safe queue
+> cancellation is implemented; the complete reference interface remains
+> planned.
 
 ## Product direction
 
@@ -27,6 +28,9 @@ The intended workflow is:
 - MP3 output with persisted bitrate, sample-rate, and channel defaults plus
   output-location controls; additional formats can follow the validated model.
 - Per-job progress with percentage, elapsed time, remaining time, speed, and audio properties.
+- Optional two-pass loudness normalization targeting −23 LUFS with a decoded
+  −1 dBTP ceiling.
+- Optional preservation of paths relative to a selected folder import.
 - Start, pause where supported, and cancel controls.
 - A readable FFmpeg log with options to clear or save it.
 - Startup checks for both `ffmpeg` and `ffprobe`, with actionable error messages when either dependency is missing.
@@ -44,10 +48,11 @@ probing, a shared output folder, and sequential MP3 extraction with per-row
 terminal states, live process measurements, and a queue summary. Cancellation
 stops the active FFmpeg process and remaining queue, removes partial output, and
 also protects application shutdown. MP3 jobs snapshot validated bitrate, sample
-rate, channel mode, metadata, and artwork policies before execution, while user
-defaults persist between launches. Allowlisted source tags and compatible
-embedded cover art are preserved when their controls are enabled; absent or
-unsupported artwork remains non-fatal. Normalization, presets, parallel
+rate, channel mode, metadata, artwork, normalization, and destination policies
+before execution, while user defaults persist between launches. Allowlisted
+source tags and compatible embedded cover art are preserved when their controls
+are enabled; absent or unsupported artwork remains non-fatal. Preserved folder
+imports retain safe paths relative to their selected root. Presets, parallel
 ripping, and advanced stream selection can follow once that pipeline is solid.
 Pause is also treated as a later, platform-dependent refinement.
 
@@ -144,6 +149,7 @@ connects each reference-interface feature to its required backend behavior.
 - [x] Connect sequential queue execution and queue-aware completion summaries.
 - [x] Connect the progress panel.
 - [x] Add validated MP3 settings, metadata policies, and compatible artwork.
+- [x] Add two-pass EBU R128 normalization and folder-preserving destinations.
 - [ ] Add packaging and platform-specific distribution guidance.
 
 ## License

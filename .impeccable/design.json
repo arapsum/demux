@@ -193,7 +193,7 @@
       "name": "Path Field",
       "kind": "input",
       "refersTo": "input",
-      "description": "Shows the chosen output folder beside a native Browse action.",
+      "description": "Shows the chosen output folder beside a native Browse action and keeps folder-preservation policy visible for folder imports.",
       "html": "<label class='ds-field'><span>Output folder</span><input placeholder='Choose an output folder' value=''/></label>",
       "css": ".ds-field { display: grid; gap: 7px; color: rgb(0.62, 0.64, 0.70); font: 400 13px system-ui, sans-serif; } .ds-field input { width: 100%; box-sizing: border-box; background: rgb(0.065, 0.07, 0.087); color: rgb(0.92, 0.93, 0.96); padding: 12px; border: 1px solid rgb(0.19, 0.20, 0.24); border-radius: 12px; font: 400 14px system-ui, sans-serif; transition: border-color .15s ease, background-color .15s ease; } .ds-field input::placeholder { color: rgb(0.62, 0.64, 0.70); } .ds-field input:hover { border-color: rgb(0.30, 0.27, 0.55); } .ds-field input:focus-visible { outline: 2px solid rgb(0.43, 0.36, 0.96); outline-offset: 1px; border-color: rgb(0.43, 0.36, 0.96); } .ds-field input:disabled { color: rgb(0.48, 0.50, 0.57); background: rgb(0.075, 0.08, 0.095); }"
     },
@@ -215,7 +215,7 @@
     {
       "name": "Queue Row",
       "kind": "custom",
-      "description": "Keeps file identity, duration, state, output settings, and source size comparable at a glance.",
+      "description": "Keeps file identity, duration, state, output settings, source size, and two-pass normalization state comparable at a glance.",
       "html": "<div class='ds-queue-row'><span class='ds-queue-index'>1</span><strong>Example Video.mp4</strong><span>00:04:15</span><span class='ds-queue-status'>Probing</span><span>MP3 · 192 kbps</span><span>24.1 MB</span></div>",
       "css": ".ds-queue-row { display: grid; grid-template-columns: 34px minmax(180px, 7fr) 2fr 3fr 3fr 2fr; align-items: center; gap: 10px; min-height: 48px; padding: 10px 12px; color: rgb(0.92, 0.93, 0.96); border-bottom: 1px solid rgb(0.17, 0.18, 0.22); font: 400 12px system-ui, sans-serif; } .ds-queue-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px system-ui, sans-serif; } .ds-queue-index, .ds-queue-status { color: rgb(0.62, 0.64, 0.70); } .ds-queue-row:hover, .ds-queue-row[data-selected='true'] { background: rgb(0.105, 0.10, 0.16); } .ds-queue-row[data-selected='true'] { box-shadow: inset 2px 0 0 rgb(0.43, 0.36, 0.96); }"
     },
@@ -229,7 +229,7 @@
   ],
   "narrative": {
     "northStar": "The Quiet Signal Desk",
-    "overview": "Demux is a compact native work surface where media state stays legible while external tools run. Its character comes from calm dark layering, precise status language, and one restrained violet action signal—not ornamental chrome. Familiar desktop controls keep attention on the file, destination, encoding choices, and outcome.",
+    "overview": "Demux is a compact native work surface where media state stays legible while external tools run. Its character comes from calm dark layering, precise status language, and one restrained violet action signal—not ornamental chrome. Familiar desktop controls keep attention on the file, destination, encoding choices, loudness phase, and outcome.",
     "keyCharacteristics": [
       "Dense enough for operational work, with generous separation between tasks.",
       "Violet is reserved for primary action and active work.",
