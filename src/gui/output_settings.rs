@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     presentation::{DependencyPresentation, StatusPresentation},
-    style::{TEXT_MUTED, inset_panel, panel, primary_action, settings_select},
+    style::{TEXT_MUTED, inset_panel, panel, primary_action, secondary_action, settings_select},
 };
 
 #[derive(Debug, Clone)]
@@ -178,7 +178,7 @@ impl OutputSettings {
         };
         let browse = button(text("Browse…").size(14))
             .padding(Padding::from([11, 14]))
-            .style(primary_action);
+            .style(secondary_action);
         let browse = if output_locked {
             browse
         } else {
