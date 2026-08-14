@@ -176,7 +176,9 @@ impl OutputSettings {
         } else {
             output_input.on_input(Message::FolderChanged)
         };
-        let browse = button(text("Browse…").size(14)).padding(Padding::from([11, 14]));
+        let browse = button(text("Browse…").size(14))
+            .padding(Padding::from([11, 14]))
+            .style(primary_action);
         let browse = if output_locked {
             browse
         } else {
