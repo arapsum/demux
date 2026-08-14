@@ -13,16 +13,21 @@ use tokio::sync::mpsc;
 use crate::ffmpeg::{
     CancellationSignal, FFmpegError, FFmpegResult, FfmpegProgress, ProgressParser,
 };
-use crate::model::encoding::RipOptions;
+use crate::model::{encoding::RipOptions, media::MediaInfo};
 
 const CANCELLATION_GRACE_PERIOD: Duration = Duration::from_secs(3);
 
 /// Describes an extraction without coupling it to process execution.
+///
+/// A request carries the probe snapshot used for safe tag and cover-art
+/// mapping. It is optional so callers that only need a plain audio conversion
+/// can continue to use [`RipRequest::new`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RipRequest {
     pub input: PathBuf,
     pub output: PathBuf,
     pub options: RipOptions,
+    pub metadata: Option<MediaInfo>,
 }
 
 impl RipRequest {
@@ -32,6 +37,7 @@ impl RipRequest {
             input: input.into(),
             output: output.into(),
             options: RipOptions::default(),
+            metadata: None,
         }
     }
 
@@ -45,6 +51,22 @@ impl RipRequest {
             input: input.into(),
             output: output.into(),
             options,
+            metadata: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_options_and_metadata(
+        input: impl Into<PathBuf>,
+        output: impl Into<PathBuf>,
+        options: RipOptions,
+        metadata: Option<MediaInfo>,
+    ) -> Self {
+        Self {
+            input: input.into(),
+            output: output.into(),
+            options,
+            metadata,
         }
     }
 }
@@ -81,7 +103,10 @@ impl FfmpegCommandBuilder {
             .arg("-n")
             .arg("-i")
             .arg(&request.input)
-            .arg("-vn")
+            .arg("-map")
+            .arg("0:a:0")
+            .arg("-map_metadata")
+            .arg("-1")
             .arg("-c:a")
             .arg(request.options.encoder())
             .arg("-b:a")
@@ -89,7 +114,33 @@ impl FfmpegCommandBuilder {
             .arg("-ar")
             .arg(request.options.sample_rate.hz().to_string())
             .arg("-ac")
-            .arg(request.options.channels.channels().to_string())
+            .arg(request.options.channels.channels().to_string());
+
+        if request.options.embed_metadata
+            && let Some(metadata) = &request.metadata
+        {
+            for (key, value) in metadata.tags.entries() {
+                command.arg("-metadata").arg(format!("{key}={value}"));
+            }
+        }
+
+        if request.options.extract_artwork
+            && let Some(artwork) = request
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.artwork.as_ref())
+                .filter(|artwork| artwork.supports_mp3())
+        {
+            command
+                .arg("-map")
+                .arg(format!("0:{}", artwork.stream_index))
+                .arg("-c:v")
+                .arg("mjpeg")
+                .arg("-disposition:v:0")
+                .arg("attached_pic");
+        }
+
+        command
             .arg("-progress")
             .arg("pipe:1")
             .arg("-nostats")
@@ -252,6 +303,8 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
             bitrate_kbps = request.options.bitrate.kbps(),
             sample_rate_hz = request.options.sample_rate.hz(),
             channels = request.options.channels.channels(),
+            embed_metadata = request.options.embed_metadata,
+            extract_artwork = request.options.extract_artwork,
         )
     )]
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
@@ -282,6 +335,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
             bitrate_kbps = request.options.bitrate.kbps(),
             sample_rate_hz = request.options.sample_rate.hz(),
             channels = request.options.channels.channels(),
+            embed_metadata = request.options.embed_metadata,
+            extract_artwork = request.options.extract_artwork,
         )
     )]
     pub async fn rip_with_progress(
@@ -312,6 +367,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
             bitrate_kbps = request.options.bitrate.kbps(),
             sample_rate_hz = request.options.sample_rate.hz(),
             channels = request.options.channels.channels(),
+            embed_metadata = request.options.embed_metadata,
+            extract_artwork = request.options.extract_artwork,
         )
     )]
     pub async fn rip_with_progress_cancellable(
@@ -374,9 +431,10 @@ pub async fn rip(input: impl AsRef<Path>, output: impl AsRef<Path>) -> FFmpegRes
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
+    use std::{ffi::OsStr, time::Duration};
 
     use crate::ffmpeg::{ChannelMode, Mp3Bitrate, OutputFormat, SampleRate};
+    use crate::model::media::{ArtworkInfo, AudioMetadata, MediaInfo, MetadataTags};
 
     use super::*;
 
@@ -390,6 +448,7 @@ mod tests {
                 bitrate: Mp3Bitrate::Kbps256,
                 sample_rate: SampleRate::Hz48000,
                 channels: ChannelMode::Mono,
+                ..RipOptions::default()
             },
         );
 
@@ -403,7 +462,10 @@ mod tests {
                 "-n",
                 "-i",
                 "input.mov",
-                "-vn",
+                "-map",
+                "0:a:0",
+                "-map_metadata",
+                "-1",
                 "-c:a",
                 "libmp3lame",
                 "-b:a",
@@ -435,6 +497,7 @@ mod tests {
                             bitrate,
                             sample_rate,
                             channels,
+                            ..RipOptions::default()
                         },
                     );
                     let command = FfmpegCommandBuilder::build_rip(&request);
@@ -465,6 +528,106 @@ mod tests {
         }
 
         assert_eq!(combinations, 16);
+    }
+
+    fn source_metadata(codec: &str) -> MediaInfo {
+        MediaInfo {
+            duration: Duration::from_secs(12),
+            container: "mov".to_owned(),
+            bitrate: None,
+            creation_time: None,
+            tags: Box::new(MetadataTags {
+                title: Some("A song".to_owned()),
+                artist: Some("An artist".to_owned()),
+                album: Some("An album".to_owned()),
+                ..MetadataTags::default()
+            }),
+            artwork: Some(ArtworkInfo {
+                stream_index: 3,
+                codec: codec.to_owned(),
+                width: Some(640),
+                height: Some(640),
+                mime_type: None,
+            }),
+            audio: AudioMetadata {
+                stream_index: 1,
+                codec: "aac".to_owned(),
+                sample_rate: Some(48_000),
+                channels: Some(2),
+                channel_layout: Some("stereo".to_owned()),
+                bitrate: None,
+                language: None,
+            },
+        }
+    }
+
+    #[test]
+    fn command_builder_maps_safe_tags_and_compatible_cover_art() {
+        let request = RipRequest::with_options_and_metadata(
+            "input.mov",
+            "output.mp3",
+            RipOptions::default(),
+            Some(source_metadata("mjpeg")),
+        );
+
+        let command = FfmpegCommandBuilder::build_rip(&request);
+        let arguments: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-metadata", "title=A song"])
+        );
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-metadata", "artist=An artist"])
+        );
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-metadata", "album=An album"])
+        );
+        assert!(arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(arguments.windows(2).any(|pair| pair == ["-c:v", "mjpeg"]));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-disposition:v:0", "attached_pic"])
+        );
+    }
+
+    #[test]
+    fn command_builder_skips_metadata_and_unsupported_art_when_disabled() {
+        let request = RipRequest::with_options_and_metadata(
+            "input.mov",
+            "output.mp3",
+            RipOptions {
+                embed_metadata: false,
+                extract_artwork: true,
+                ..RipOptions::default()
+            },
+            Some(source_metadata("webp")),
+        );
+
+        let command = FfmpegCommandBuilder::build_rip(&request);
+        let arguments: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(!arguments.iter().any(|argument| argument == "-metadata"));
+        assert!(!arguments.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-map_metadata", "-1"])
+        );
     }
 
     #[cfg(unix)]

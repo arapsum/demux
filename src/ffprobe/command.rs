@@ -6,11 +6,13 @@ use crate::{ffprobe::ProbeError, model::media::MediaInfo};
 
 use super::{error::ProbeResult, output::ProbeOutput};
 
-/// Runs `ffprobe` asynchronously to inspect the first audio stream in a media
-/// file.
+/// Runs `ffprobe` asynchronously to inspect the first audio stream and any
+/// attached cover-art stream in a media file.
 ///
-/// The command requests JSON containing the selected stream and container
-/// fields needed to build [`MediaInfo`].
+/// The command requests JSON containing all stream dispositions and the
+/// allowlisted container/stream tags needed to build [`MediaInfo`]. The
+/// converter selects the first audio stream instead of assuming stream zero,
+/// which keeps cover-art and video streams from changing audio selection.
 ///
 /// # Parameters
 ///
@@ -30,10 +32,8 @@ pub async fn probe(input: &str) -> ProbeResult<Output> {
     let cmd = Command::new("ffprobe")
         .arg("-v")
         .arg("error")
-        .arg("-select_streams")
-        .arg("a:0")
         .arg("-show_entries")
-        .arg("format=format_name,duration,bit_rate:format_tags=creation_time:stream=index,codec_name,sample_rate,channels,channel_layout,bit_rate:stream_tags=language")
+        .arg("format=format_name,duration,bit_rate:format_tags=creation_time,title,artist,album,album_artist,date,track,disc,genre,composer,comment,copyright,language:stream=index,codec_type,codec_name,sample_rate,channels,channel_layout,bit_rate,width,height:stream_disposition=attached_pic:stream_tags=language,title,artist,album,album_artist,date,track,disc,genre,composer,comment,copyright")
         .arg("-of")
         .arg("json")
         .arg(input)

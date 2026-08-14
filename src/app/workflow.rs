@@ -19,7 +19,7 @@ pub enum WorkflowStage {
 pub enum WorkflowEvent {
     CheckingDependencies,
     DependenciesReady(Dependencies),
-    MetadataReady(MediaInfo),
+    MetadataReady(Box<MediaInfo>),
     Ripping,
     Completed {
         output: String,
@@ -88,7 +88,7 @@ impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
     pub async fn run_job(
         &self,
         app: &mut App,
-        request: RipRequest,
+        mut request: RipRequest,
         reporter: &mut impl WorkflowReporter,
     ) -> JobId {
         let input = request.input.to_string_lossy().into_owned();
@@ -102,6 +102,8 @@ impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
             bitrate_kbps = request.options.bitrate.kbps(),
             sample_rate_hz = request.options.sample_rate.hz(),
             channels = request.options.channels.channels(),
+            embed_metadata = request.options.embed_metadata,
+            extract_artwork = request.options.extract_artwork,
         );
 
         let id = job.id.clone();
@@ -125,11 +127,14 @@ impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
                         stream_index = metadata.audio.stream_index,
                         sample_rate = ?metadata.audio.sample_rate,
                         channels = ?metadata.audio.channels,
+                        metadata_tags = !metadata.tags.is_empty(),
+                        artwork = metadata.artwork.as_ref().map(|artwork| artwork.format_label()),
                         "media probe completed"
                     );
 
                     job.record_metadata(metadata.clone());
-                    reporter.report(WorkflowEvent::MetadataReady(metadata));
+                    request.metadata = Some(metadata.clone());
+                    reporter.report(WorkflowEvent::MetadataReady(Box::new(metadata)));
                 }
                 Err(error) => {
                     tracing::warn!(error = %error, stage = "probing", "job failed");
@@ -295,6 +300,8 @@ mod tests {
             container: "mp4".into(),
             bitrate: None,
             creation_time: None,
+            tags: Default::default(),
+            artwork: None,
             audio: AudioMetadata {
                 stream_index: 0,
                 codec: "aac".into(),

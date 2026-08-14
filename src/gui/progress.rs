@@ -37,7 +37,7 @@ pub enum TerminalStatus {
 pub enum Message {
     Started {
         job_id: JobId,
-        request: RipRequest,
+        request: Box<RipRequest>,
         progress: RipProgress,
     },
     Advanced {
@@ -372,7 +372,7 @@ mod tests {
     fn started() -> Message {
         Message::Started {
             job_id: JobId::new(1),
-            request: RipRequest::new("/videos/example.mp4", "/music/example.mp3"),
+            request: Box::new(RipRequest::new("/videos/example.mp4", "/music/example.mp3")),
             progress: RipProgress {
                 duration: Duration::from_secs(120),
                 ..RipProgress::default()

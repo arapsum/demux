@@ -173,6 +173,8 @@ mod tests {
             container: "mp4".into(),
             bitrate: None,
             creation_time: None,
+            tags: Default::default(),
+            artwork: None,
             audio: AudioMetadata {
                 stream_index: 1,
                 codec: "aac".into(),

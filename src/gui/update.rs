@@ -236,7 +236,7 @@ impl Demux {
                 });
                 let (handle, signal) = cancellation_pair();
                 self.active_cancellation = Some((job_id.clone(), handle));
-                rip_task(job_id, request, signal)
+                rip_task(job_id, *request, signal)
             }
             queue::Action::QueueFinished { summary, error } => {
                 if self.exit_after_queue {
@@ -362,6 +362,8 @@ mod tests {
             container: "mov,mp4".into(),
             bitrate: Some(1_000_000),
             creation_time: None,
+            tags: Default::default(),
+            artwork: None,
             audio: AudioMetadata {
                 stream_index: 1,
                 codec: "aac".into(),

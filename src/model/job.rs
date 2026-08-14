@@ -32,7 +32,8 @@ impl JobId {
 /// - `input`: The source media file path.
 /// - `output`: The destination path for the extracted audio.
 /// - `status`: The current lifecycle state of the job.
-/// - `metadata`: Media metadata discovered during probing, when successful.
+/// - `metadata`: Media metadata, safe tags, and artwork discovered during
+///   probing, when successful.
 /// - `progress`: The latest measured or estimated ripping progress.
 #[derive(Debug, Clone)]
 pub struct RipJob {
@@ -241,6 +242,8 @@ mod tests {
             container: "mp4".to_owned(),
             bitrate: Some(1_000_000),
             creation_time: None,
+            tags: Default::default(),
+            artwork: None,
             audio: super::super::media::AudioMetadata {
                 stream_index: 0,
                 codec: "aac".to_owned(),

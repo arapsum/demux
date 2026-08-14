@@ -76,7 +76,7 @@ pub(crate) enum Action {
     },
     RipRequested {
         job_id: JobId,
-        request: RipRequest,
+        request: Box<RipRequest>,
         initial_progress: RipProgress,
     },
     QueueFinished {
@@ -426,7 +426,12 @@ impl Queue {
                 job.output = output.to_string_lossy().into_owned();
                 Action::RipRequested {
                     job_id: job_id.clone(),
-                    request: RipRequest::with_options(job.input.clone(), output, job.options),
+                    request: Box::new(RipRequest::with_options_and_metadata(
+                        job.input.clone(),
+                        output,
+                        job.options,
+                        job.metadata.clone(),
+                    )),
                     initial_progress: job.progress.clone(),
                 }
             }
@@ -1003,6 +1008,8 @@ mod tests {
             container: "mp4".into(),
             bitrate: None,
             creation_time: None,
+            tags: Default::default(),
+            artwork: None,
             audio: AudioMetadata {
                 stream_index: 1,
                 codec: "aac".into(),
@@ -1255,7 +1262,8 @@ mod tests {
 
         assert!(matches!(
             action,
-            Action::RipRequested { request, .. } if request.options == options
+            Action::RipRequested { request, .. }
+                if request.options == options && request.metadata == Some(metadata())
         ));
         assert_eq!(queue.jobs[0].options, options);
     }

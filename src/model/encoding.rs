@@ -166,13 +166,34 @@ impl fmt::Display for ChannelMode {
 }
 
 /// A validated snapshot of the encoding settings for one extraction.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RipOptions {
     pub format: OutputFormat,
     pub bitrate: Mp3Bitrate,
     pub sample_rate: SampleRate,
     pub channels: ChannelMode,
+    #[serde(default = "default_enabled")]
+    pub embed_metadata: bool,
+    #[serde(default = "default_enabled")]
+    pub extract_artwork: bool,
+}
+
+impl Default for RipOptions {
+    fn default() -> Self {
+        Self {
+            format: OutputFormat::default(),
+            bitrate: Mp3Bitrate::default(),
+            sample_rate: SampleRate::default(),
+            channels: ChannelMode::default(),
+            embed_metadata: true,
+            extract_artwork: true,
+        }
+    }
+}
+
+const fn default_enabled() -> bool {
+    true
 }
 
 impl RipOptions {
@@ -186,6 +207,7 @@ impl RipOptions {
             bitrate: Mp3Bitrate::try_from(bitrate_kbps)?,
             sample_rate: SampleRate::try_from(sample_rate_hz)?,
             channels: ChannelMode::try_from(channels)?,
+            ..Self::default()
         })
     }
 
@@ -218,6 +240,8 @@ mod tests {
                 bitrate: Mp3Bitrate::Kbps256,
                 sample_rate: SampleRate::Hz48000,
                 channels: ChannelMode::Mono,
+                embed_metadata: true,
+                extract_artwork: true,
             }
         );
         assert_eq!(
@@ -232,5 +256,16 @@ mod tests {
             RipOptions::try_new(192, 44_100, 6).unwrap_err(),
             EncodingOptionError::ChannelCount(6)
         );
+    }
+
+    #[test]
+    fn persisted_options_default_new_metadata_controls_to_enabled() {
+        let options: RipOptions = serde_json::from_str(
+            r#"{"format":"mp3","bitrate":"kbps192","sample_rate":"hz44100","channels":"stereo"}"#,
+        )
+        .unwrap();
+
+        assert!(options.embed_metadata);
+        assert!(options.extract_artwork);
     }
 }
