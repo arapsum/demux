@@ -97,12 +97,46 @@ pub enum ProcessExit {
 pub struct FfmpegCommandBuilder;
 
 impl FfmpegCommandBuilder {
+    /// Builds a non-normalized MP3 extraction command.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: Input, output, metadata, and encoding options.
+    ///
+    /// # Returns
+    ///
+    /// A configured `ffmpeg` command.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `request.options.normalize_audio` is enabled. Normalized
+    /// requests must use [`Self::build_rip_with_measurement`] after analysis.
     #[must_use]
     pub fn build_rip(request: &RipRequest) -> Command {
         Self::build_rip_with_measurement(request, None)
             .expect("build_rip is only valid for non-normalized requests")
     }
 
+    /// Builds an extraction command, optionally using a loudness measurement.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: Input, output, metadata, and encoding options.
+    /// - `measurement`: First-pass loudness data for normalized requests.
+    ///
+    /// # Returns
+    ///
+    /// A configured `ffmpeg` command.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FFmpegError::LoudnessMeasurementMissing`] when normalization
+    /// is enabled without a first-pass measurement.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the validated normalization invariant is violated
+    /// between the check and the measurement lookup.
     pub fn build_rip_with_measurement(
         request: &RipRequest,
         measurement: Option<&LoudnessMeasurement>,
@@ -206,15 +240,15 @@ fn dual_mono(request: &RipRequest) -> bool {
 }
 
 /// Runs a prepared child-process command.
-pub trait ProcessRunner {
+pub trait ProcessRunner: Sync {
     fn run<'a>(
         &'a self,
         command: Command,
     ) -> Pin<Box<dyn Future<Output = std::io::Result<Output>> + Send + 'a>>;
 }
 
-/// Runs FFmpeg while forwarding machine-readable progress snapshots.
-pub trait ProgressProcessRunner {
+/// Runs `FFmpeg` while forwarding machine-readable progress snapshots.
+pub trait ProgressProcessRunner: Sync {
     fn run_with_progress<'a>(
         &'a self,
         command: Command,
@@ -304,16 +338,15 @@ async fn run_with_progress(
                 }
             }
 
-            match tokio::time::timeout(grace_period, child.wait()).await {
-                Ok(status) => (status?, true, false),
-                Err(_) => {
-                    tracing::warn!(
-                        grace_period_ms = grace_period.as_millis(),
-                        "ffmpeg did not stop cooperatively; forcing termination"
-                    );
-                    child.kill().await?;
-                    (child.wait().await?, true, true)
-                }
+            if let Ok(status) = tokio::time::timeout(grace_period, child.wait()).await {
+                (status?, true, false)
+            } else {
+                tracing::warn!(
+                    grace_period_ms = grace_period.as_millis(),
+                    "ffmpeg did not stop cooperatively; forcing termination"
+                );
+                child.kill().await?;
+                (child.wait().await?, true, true)
             }
         }
     };
@@ -363,6 +396,21 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
             extract_artwork = request.options.extract_artwork,
         )
     )]
+    /// Executes one extraction request without progress reporting.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: Input, output, metadata, and encoding options.
+    ///
+    /// # Returns
+    ///
+    /// The completed process status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the output directory cannot be prepared, an
+    /// `ffmpeg` process cannot run, normalization analysis fails, or the
+    /// process exits unsuccessfully.
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
         tracing::debug!("launching ffmpeg process");
         ensure_output_parent(&request.output).await?;
@@ -386,7 +434,7 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
             "ffmpeg process exited"
         );
 
-        outcome(output)
+        outcome(&output)
     }
 
     async fn analyze(&self, request: &RipRequest) -> FFmpegResult<LoudnessMeasurement> {
@@ -418,6 +466,21 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
             extract_artwork = request.options.extract_artwork,
         )
     )]
+    /// Executes an extraction while forwarding phase progress snapshots.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: Input, output, metadata, and encoding options.
+    /// - `progress`: Channel receiving machine-readable progress events.
+    ///
+    /// # Returns
+    ///
+    /// The completed process status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when process setup, normalization analysis, progress
+    /// forwarding, or `ffmpeg` execution fails.
     pub async fn rip_with_progress(
         &self,
         request: &RipRequest,
@@ -450,6 +513,22 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
             extract_artwork = request.options.extract_artwork,
         )
     )]
+    /// Executes an extraction with progress reporting and cancellation.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: Input, output, metadata, and encoding options.
+    /// - `progress`: Channel receiving machine-readable progress events.
+    /// - `cancellation`: Signal used to stop both normalization and encoding.
+    ///
+    /// # Returns
+    ///
+    /// A completed or cancelled process termination.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when process setup, normalization analysis, progress
+    /// forwarding, or `ffmpeg` execution fails.
     pub async fn rip_with_progress_cancellable(
         &self,
         request: &RipRequest,
@@ -500,7 +579,7 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
                     stderr_bytes = output.stderr.len(),
                     "ffmpeg progress process exited"
                 );
-                outcome(output).map(RipTermination::Completed)
+                outcome(&output).map(RipTermination::Completed)
             }
             ProcessExit::Cancelled { output, forced } => {
                 tracing::info!(
@@ -558,7 +637,7 @@ async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
     tokio::fs::create_dir_all(parent).await
 }
 
-fn outcome(output: Output) -> FFmpegResult<RipOutcome> {
+fn outcome(output: &Output) -> FFmpegResult<RipOutcome> {
     if !output.status.success() {
         return Err(FFmpegError::ProcessFailed {
             status: output.status,
@@ -571,7 +650,21 @@ fn outcome(output: Output) -> FFmpegResult<RipOutcome> {
     })
 }
 
-/// Convenience entry point using the production process runner.
+/// Runs a plain extraction using the production process runner.
+///
+/// # Parameters
+///
+/// - `input`: Source media path.
+/// - `output`: Destination audio path.
+///
+/// # Returns
+///
+/// The completed process status.
+///
+/// # Errors
+///
+/// Returns an error when output preparation, process execution, or `ffmpeg`
+/// reports a failure.
 pub async fn rip(input: impl AsRef<Path>, output: impl AsRef<Path>) -> FFmpegResult<RipOutcome> {
     FfmpegAudioRipper::<TokioProcessRunner>::default()
         .rip(&RipRequest::new(input.as_ref(), output.as_ref()))

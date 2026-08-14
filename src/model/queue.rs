@@ -5,7 +5,7 @@ use super::{
 
 /// Allocates job identifiers and retains the latest submitted job.
 #[derive(Debug)]
-pub(crate) struct JobQueue {
+pub struct JobQueue {
     current: Option<RipJob>,
     next_id: u64,
 }
@@ -28,7 +28,7 @@ impl JobQueue {
         self.current = Some(job);
     }
 
-    pub(crate) fn current(&self) -> Option<&RipJob> {
+    pub(crate) const fn current(&self) -> Option<&RipJob> {
         self.current.as_ref()
     }
 }

@@ -46,7 +46,7 @@ pub struct MetadataTags {
 }
 
 impl MetadataTags {
-    /// Returns sanitized FFmpeg metadata entries in a stable order.
+    /// Returns sanitized `FFmpeg` metadata entries in a stable order.
     pub fn entries(&self) -> impl Iterator<Item = (&'static str, String)> + '_ {
         [
             ("title", self.title.as_deref()),

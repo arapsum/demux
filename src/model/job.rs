@@ -144,7 +144,7 @@ impl RipJob {
         self.status = JobStatus::Queued;
     }
 
-    pub(crate) fn set_options(&mut self, options: RipOptions) {
+    pub(crate) const fn set_options(&mut self, options: RipOptions) {
         self.options = options;
     }
 
@@ -246,7 +246,7 @@ impl RipProgress {
         });
     }
 
-    pub(crate) fn reset_for_phase(&mut self) {
+    pub(crate) const fn reset_for_phase(&mut self) {
         self.elapsed = Duration::ZERO;
         self.percent = 0.0;
         self.speed = None;
@@ -255,7 +255,7 @@ impl RipProgress {
         self.remaining = None;
     }
 
-    pub(crate) fn finish(&mut self) {
+    pub(crate) const fn finish(&mut self) {
         if !self.duration.is_zero() {
             self.elapsed = self.duration;
         }

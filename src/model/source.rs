@@ -15,6 +15,21 @@ pub struct SourceHierarchy {
 }
 
 impl SourceHierarchy {
+    /// Creates a validated source-folder and relative-file pairing.
+    ///
+    /// # Parameters
+    ///
+    /// - `root`: Absolute folder selected for the import.
+    /// - `relative_path`: Safe path from `root` to the media file.
+    ///
+    /// # Returns
+    ///
+    /// A hierarchy record suitable for destination resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `root` is not absolute or the relative path is
+    /// empty, absolute, or contains parent/current-directory components.
     pub fn new(
         root: impl Into<PathBuf>,
         relative_path: impl Into<PathBuf>,

@@ -3,7 +3,10 @@ use tracing::{Instrument, info_span};
 use crate::{
     App, Result,
     ffmpeg::{Dependencies, DependencyState, RipRequest},
-    model::{job::JobId, media::MediaInfo},
+    model::{
+        job::JobId,
+        media::{ArtworkInfo, MediaInfo},
+    },
 };
 
 use super::services::{AudioRipper, DependencyChecker, MediaProbe};
@@ -34,7 +37,7 @@ pub enum WorkflowEvent {
 
 /// Receives workflow events without making the workflow depend on a terminal
 /// or desktop UI.
-pub trait WorkflowReporter {
+pub trait WorkflowReporter: Send {
     fn report(&mut self, event: WorkflowEvent);
 }
 
@@ -58,6 +61,20 @@ impl<D, P, R> RipWorkflow<D, P, R> {
 }
 
 impl<D: DependencyChecker, P, R> RipWorkflow<D, P, R> {
+    /// Detects the external tools required by the workflow.
+    ///
+    /// # Parameters
+    ///
+    /// - `app`: Application state that receives the dependency status.
+    /// - `reporter`: Sink for UI-neutral dependency events.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when both dependencies are available.
+    ///
+    /// # Errors
+    ///
+    /// Returns the dependency error reported by the checker.
     pub fn detect_dependencies(
         &self,
         app: &mut App,
@@ -84,7 +101,19 @@ impl<D: DependencyChecker, P, R> RipWorkflow<D, P, R> {
     }
 }
 
-impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
+impl<D: Sync, P: MediaProbe + Sync, R: AudioRipper + Sync> RipWorkflow<D, P, R> {
+    /// Runs one probe-and-rip job and reports each workflow transition.
+    ///
+    /// # Parameters
+    ///
+    /// - `app`: Application state that owns the job lifecycle.
+    /// - `request`: Typed input, output, and encoding request.
+    /// - `reporter`: Sink for UI-neutral job events.
+    ///
+    /// # Returns
+    ///
+    /// The stable identifier assigned to the job. Failures are reported as
+    /// workflow events and do not change the return type.
     pub async fn run_job(
         &self,
         app: &mut App,
@@ -128,7 +157,7 @@ impl<D, P: MediaProbe, R: AudioRipper> RipWorkflow<D, P, R> {
                         sample_rate = ?metadata.audio.sample_rate,
                         channels = ?metadata.audio.channels,
                         metadata_tags = !metadata.tags.is_empty(),
-                        artwork = metadata.artwork.as_ref().map(|artwork| artwork.format_label()),
+                        artwork = metadata.artwork.as_ref().map(ArtworkInfo::format_label),
                         "media probe completed"
                     );
 

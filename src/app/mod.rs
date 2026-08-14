@@ -44,7 +44,7 @@ impl App {
     }
 
     #[must_use]
-    pub fn current_job(&self) -> Option<&RipJob> {
+    pub const fn current_job(&self) -> Option<&RipJob> {
         self.jobs.current()
     }
 

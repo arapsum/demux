@@ -7,7 +7,7 @@ use crate::model::{
 
 const RIP_TARGET_EXTENSION: &str = "mp3";
 
-pub(crate) async fn available_output_path(requested: &Path) -> std::io::Result<PathBuf> {
+pub async fn available_output_path(requested: &Path) -> std::io::Result<PathBuf> {
     if !tokio::fs::try_exists(requested).await? {
         return Ok(requested.to_path_buf());
     }
@@ -35,7 +35,7 @@ pub(crate) async fn available_output_path(requested: &Path) -> std::io::Result<P
     unreachable!("the numeric output suffix space is unbounded")
 }
 
-pub(crate) fn output_path(
+pub fn output_path(
     input: &str,
     output_directory: Option<&str>,
     output_filename: Option<&str>,
@@ -60,7 +60,7 @@ pub(crate) fn output_path(
 
 /// Derives a destination while preserving the relative path of a folder
 /// import when that policy is enabled.
-pub(crate) fn destination_path(
+pub fn destination_path(
     input: &Path,
     hierarchy: Option<&SourceHierarchy>,
     output_directory: Option<&Path>,
@@ -93,7 +93,7 @@ pub(crate) fn destination_path(
     base.join(filename)
 }
 
-pub(crate) async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
+pub async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
     let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

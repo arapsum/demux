@@ -12,7 +12,7 @@ pub struct RipProgressEvent {
     pub progress: FfmpegProgress,
 }
 
-/// One machine-readable progress snapshot emitted by FFmpeg.
+/// One machine-readable progress snapshot emitted by `FFmpeg`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FfmpegProgress {
     pub elapsed: Option<Duration>,
@@ -29,7 +29,7 @@ pub enum ProgressStatus {
     End,
 }
 
-/// Accumulates FFmpeg `key=value` lines into complete progress records.
+/// Accumulates `FFmpeg` `key=value` lines into complete progress records.
 #[derive(Debug, Default)]
 pub struct ProgressParser {
     current: FfmpegProgress,
@@ -95,20 +95,44 @@ fn parse_timestamp(value: &str) -> Option<Duration> {
     let mut parts = value.trim().split(':');
     let hours: u64 = parts.next()?.parse().ok()?;
     let minutes: u64 = parts.next()?.parse().ok()?;
-    let seconds: f64 = parts.next()?.parse().ok()?;
-    if parts.next().is_some()
-        || minutes >= 60
-        || !seconds.is_finite()
-        || !(0.0..60.0).contains(&seconds)
-    {
+    let seconds = parts.next()?;
+    if parts.next().is_some() || minutes >= 60 {
         return None;
     }
 
+    let whole_seconds = parse_whole_seconds(seconds)?;
+    if whole_seconds >= 60 {
+        return None;
+    }
     let whole = hours
         .checked_mul(3_600)?
         .checked_add(minutes.checked_mul(60)?)?
-        .checked_add(seconds.trunc() as u64)?;
-    Duration::from_secs(whole).checked_add(Duration::from_secs_f64(seconds.fract()))
+        .checked_add(whole_seconds)?;
+    let fraction = if seconds.contains('.') {
+        parse_fractional_seconds(seconds)?
+    } else {
+        Duration::ZERO
+    };
+    Duration::from_secs(whole).checked_add(fraction)
+}
+
+fn parse_whole_seconds(value: &str) -> Option<u64> {
+    value.split('.').next()?.parse().ok()
+}
+
+fn parse_fractional_seconds(value: &str) -> Option<Duration> {
+    let fraction = value.split_once('.')?.1;
+    if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let mut nanos = 0_u32;
+    let mut digits = 0_u32;
+    for byte in fraction.bytes().take(9) {
+        nanos = nanos.checked_mul(10)?.checked_add(u32::from(byte - b'0'))?;
+        digits += 1;
+    }
+    let scale = 10_u32.pow(9 - digits);
+    Some(Duration::from_nanos(u64::from(nanos.saturating_mul(scale))))
 }
 
 #[cfg(test)]

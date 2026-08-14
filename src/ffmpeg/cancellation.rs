@@ -11,7 +11,7 @@ struct CancellationState {
     notified: Notify,
 }
 
-/// A clonable control handle for requesting cancellation of one FFmpeg process.
+/// A clonable control handle for requesting cancellation of one `FFmpeg` process.
 #[derive(Debug, Clone)]
 pub struct CancellationHandle {
     state: Arc<CancellationState>,
@@ -37,6 +37,7 @@ pub fn cancellation_pair() -> (CancellationHandle, CancellationSignal) {
 
 impl CancellationHandle {
     /// Requests cancellation, returning `true` only for the first request.
+    #[must_use]
     pub fn cancel(&self) -> bool {
         if self.state.requested.swap(true, Ordering::AcqRel) {
             return false;

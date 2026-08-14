@@ -24,6 +24,7 @@ pub struct AcceptedInput {
     pub hierarchy: Option<SourceHierarchy>,
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn discover(inputs: Vec<PathBuf>, existing: Vec<PathBuf>) -> IntakeResult {
     let mut result = IntakeResult::default();
     let mut seen: HashSet<PathBuf> = existing.into_iter().collect();

@@ -65,7 +65,7 @@ pub(super) struct StreamDisposition {
 }
 
 /// Represents raw tags attached to a media stream or container in `ffprobe`
-/// JSON. FFmpeg preserves the source key casing, so lookups are intentionally
+/// JSON. `FFmpeg` preserves the source key casing, so lookups are intentionally
 /// case-insensitive. Non-string values are ignored as malformed metadata.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct RawTags {

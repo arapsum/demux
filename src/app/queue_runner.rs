@@ -51,7 +51,7 @@ impl QueueRunner {
     }
 
     #[must_use]
-    pub fn active(&self) -> Option<&JobId> {
+    pub const fn active(&self) -> Option<&JobId> {
         self.active.as_ref()
     }
 

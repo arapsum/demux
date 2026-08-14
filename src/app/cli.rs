@@ -16,6 +16,20 @@ impl Cli {
         Self
     }
 
+    /// Runs the terminal extraction workflow from interactive input.
+    ///
+    /// # Parameters
+    ///
+    /// - `app`: Application state updated with dependency and job results.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the requested job reaches a terminal state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when dependency detection, input reading, output path
+    /// construction, or the workflow fails.
     pub async fn run(&mut self, app: &mut App) -> Result<()> {
         let workflow = RipWorkflow::new(
             SystemDependencyChecker,

@@ -11,6 +11,16 @@ use crate::{
 
 /// Checks whether required external tools are available.
 pub trait DependencyChecker {
+    /// Detects the required external tools.
+    ///
+    /// # Returns
+    ///
+    /// Versions for the detected `ffmpeg` and `ffprobe` executables.
+    ///
+    /// # Errors
+    ///
+    /// Returns a dependency error when either executable is unavailable or
+    /// cannot report its version.
     fn detect(&self) -> Result<Dependencies, DependencyError>;
 }
 

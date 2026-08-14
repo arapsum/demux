@@ -47,7 +47,7 @@ pub async fn save_preferences(
     preferences::save(options, destination, revision).await
 }
 
-/// Probes one media input through the production FFprobe adapter.
+/// Probes one media input through the production `FFprobe` adapter.
 pub async fn probe(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
     let span = info_span!("media_probe_job", job_id = job_id.0);
     async move { Ok(ffprobe::inspect(&input.to_string_lossy()).await?) }

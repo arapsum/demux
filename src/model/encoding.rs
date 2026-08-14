@@ -200,6 +200,21 @@ const fn default_enabled() -> bool {
 }
 
 impl RipOptions {
+    /// Builds encoding options from primitive values supplied by a caller.
+    ///
+    /// # Parameters
+    ///
+    /// - `bitrate_kbps`: Requested MP3 bitrate in kilobits per second.
+    /// - `sample_rate_hz`: Requested sample rate in hertz.
+    /// - `channels`: Requested channel count.
+    ///
+    /// # Returns
+    ///
+    /// Validated MP3 encoding options with the default metadata policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any supplied value is not supported by Demux.
     pub fn try_new(
         bitrate_kbps: u32,
         sample_rate_hz: u32,

@@ -20,6 +20,21 @@ pub struct LoudnessMeasurement {
 }
 
 impl LoudnessMeasurement {
+    /// Parses the JSON measurement emitted by `loudnorm`.
+    ///
+    /// # Parameters
+    ///
+    /// - `stderr`: Raw `ffmpeg` standard error bytes containing the JSON
+    ///   measurement block.
+    ///
+    /// # Returns
+    ///
+    /// A finite loudness measurement suitable for the second pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the measurement block is missing, malformed, or
+    /// contains a non-finite value.
     pub fn parse(stderr: &[u8]) -> FFmpegResult<Self> {
         let text = String::from_utf8_lossy(stderr);
         let mut candidate = String::new();
@@ -53,11 +68,11 @@ impl LoudnessMeasurement {
 
         let raw = parsed.ok_or(FFmpegError::LoudnessMeasurementMissing)?;
         let measurement = Self {
-            integrated_lufs: raw.number("input_i", &raw.input_i)?,
-            loudness_range: raw.number("input_lra", &raw.input_lra)?,
-            true_peak: raw.number("input_tp", &raw.input_tp)?,
-            threshold: raw.number("input_thresh", &raw.input_thresh)?,
-            offset: raw.number("target_offset", &raw.target_offset)?,
+            integrated_lufs: RawMeasurement::number("input_i", &raw.input_i)?,
+            loudness_range: RawMeasurement::number("input_lra", &raw.input_lra)?,
+            true_peak: RawMeasurement::number("input_tp", &raw.input_tp)?,
+            threshold: RawMeasurement::number("input_thresh", &raw.input_thresh)?,
+            offset: RawMeasurement::number("target_offset", &raw.target_offset)?,
         };
         if [
             measurement.integrated_lufs,
@@ -88,7 +103,7 @@ struct RawMeasurement {
 }
 
 impl RawMeasurement {
-    fn number(&self, field: &'static str, value: &serde_json::Value) -> FFmpegResult<f64> {
+    fn number(field: &'static str, value: &serde_json::Value) -> FFmpegResult<f64> {
         let number = match value {
             serde_json::Value::Number(number) => number.as_f64(),
             serde_json::Value::String(value) => value.parse().ok(),

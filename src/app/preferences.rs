@@ -32,15 +32,15 @@ pub struct PreferenceDefaults {
     pub destination: DestinationPolicy,
 }
 
-pub(crate) async fn load() -> Result<PreferenceDefaults> {
+pub async fn load() -> Result<PreferenceDefaults> {
     load_from(&preferences_path()?).await
 }
 
-pub(crate) fn next_revision() -> u64 {
+pub fn next_revision() -> u64 {
     NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
 }
 
-pub(crate) async fn save(
+pub async fn save(
     encoding: RipOptions,
     destination: DestinationPolicy,
     revision: u64,

@@ -76,6 +76,19 @@ pub fn metadata(output: &Output) -> ProbeResult<MediaInfo> {
 ///
 /// This is the application-facing probing API; raw process output and JSON
 /// conversion remain internal details of the adapter.
+///
+/// # Parameters
+///
+/// - `input`: Path to the media file to inspect.
+///
+/// # Returns
+///
+/// Parsed container and first-audio-stream metadata.
+///
+/// # Errors
+///
+/// Returns an error when `ffprobe` cannot inspect the input or its output
+/// cannot be converted into [`MediaInfo`].
 #[tracing::instrument(name = "ffprobe_inspect", level = "debug", skip_all)]
 pub async fn inspect(input: &str) -> ProbeResult<MediaInfo> {
     tracing::trace!(input = %input, "launching ffprobe");
