@@ -1,29 +1,259 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-12T00:00:00Z",
+  "generatedAt": "2026-08-14T15:08:30+03:00",
   "title": "Design System: Demux",
   "extensions": {
     "colorMeta": {
-      "workspace": { "role": "neutral", "displayName": "Workspace", "canonical": "rgb(0.055, 0.06, 0.075)", "tonalRamp": ["#090a0c", "#0e0f13", "#181a20", "#252832", "#3b3f4c", "#5d6272", "#9297a5", "#e7e9ef"] },
-      "primary": { "role": "primary", "displayName": "Signal Violet", "canonical": "rgb(0.43, 0.36, 0.96)", "tonalRamp": ["#17112f", "#251d52", "#382c78", "#5141ad", "#6e5cf5", "#9589fa", "#c0b9fd", "#eeeaff"] }
+      "workspace": {
+        "role": "neutral",
+        "displayName": "Workspace",
+        "canonical": "rgb(0.055, 0.06, 0.075)",
+        "tonalRamp": ["#090a0c", "#0e0f13", "#181a20", "#252832", "#3b3f4c", "#5d6272", "#9297a5", "#e7e9ef"]
+      },
+      "panel": {
+        "role": "surface",
+        "displayName": "Quiet Panel",
+        "canonical": "rgb(0.085, 0.092, 0.112)",
+        "tonalRamp": ["#0c0d10", "#12141a", "#1b1e26", "#2b2f3a", "#454a58", "#697080", "#a3a9b5", "#eceef3"]
+      },
+      "inset": {
+        "role": "surface",
+        "displayName": "Inset",
+        "canonical": "rgb(0.065, 0.07, 0.087)",
+        "tonalRamp": ["#0a0b0f", "#11131a", "#1a1e27", "#292e39", "#414754", "#626a7a", "#979eab", "#e7eaf0"]
+      },
+      "inset-selected": {
+        "role": "selected-surface",
+        "displayName": "Selected Inset",
+        "canonical": "rgb(0.075, 0.08, 0.10)",
+        "tonalRamp": ["#0b0c10", "#13151c", "#1f222c", "#303544", "#4a5264", "#71798c", "#a6aebe", "#eceff5"]
+      },
+      "border": {
+        "role": "border",
+        "displayName": "Surface Border",
+        "canonical": "rgb(0.17, 0.18, 0.22)",
+        "tonalRamp": ["#15171d", "#242730", "#343844", "#4a4f5e", "#686e7e", "#9197a5", "#c0c4ce", "#eceef2"]
+      },
+      "border-inset": {
+        "role": "border",
+        "displayName": "Inset Border",
+        "canonical": "rgb(0.19, 0.20, 0.24)",
+        "tonalRamp": ["#17191f", "#282b35", "#393d49", "#505564", "#707685", "#989eab", "#c4c8d1", "#eef0f4"]
+      },
+      "border-selected": {
+        "role": "selected-border",
+        "displayName": "Signal Border",
+        "canonical": "rgb(0.30, 0.27, 0.55)",
+        "tonalRamp": ["#1c173c", "#2b2360", "#3d3282", "#5144b0", "#6d5ff0", "#9589fa", "#c0b9fd", "#eeeaff"]
+      },
+      "text": {
+        "role": "text",
+        "displayName": "Primary Text",
+        "canonical": "rgb(0.92, 0.93, 0.96)",
+        "tonalRamp": ["#0f1116", "#1d2028", "#30343f", "#4b515f", "#6e7483", "#999fac", "#c9cdd7", "#ebedf5"]
+      },
+      "text-muted": {
+        "role": "muted-text",
+        "displayName": "Muted Text",
+        "canonical": "rgb(0.62, 0.64, 0.70)",
+        "tonalRamp": ["#1a1c23", "#2d303b", "#444854", "#5e6371", "#7a808f", "#9ea3b3", "#c1c5cf", "#e5e7ed"]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Signal Violet",
+        "canonical": "rgb(0.43, 0.36, 0.96)",
+        "tonalRamp": ["#17112f", "#251d52", "#382c78", "#5141ad", "#6e5cf5", "#9589fa", "#c0b9fd", "#eeeaff"]
+      },
+      "primary-tile": {
+        "role": "primary-surface",
+        "displayName": "Violet Tile",
+        "canonical": "rgb(0.20, 0.17, 0.43)",
+        "tonalRamp": ["#17112f", "#251d52", "#382c78", "#5141ad", "#6e5cf5", "#9589fa", "#c0b9fd", "#eeeaff"]
+      },
+      "primary-tile-border": {
+        "role": "primary-border",
+        "displayName": "Violet Tile Border",
+        "canonical": "rgb(0.34, 0.29, 0.67)",
+        "tonalRamp": ["#1a1538", "#2b225d", "#3d3182", "#5144ad", "#6e5cf5", "#9589fa", "#c0b9fd", "#eeeaff"]
+      },
+      "success": {
+        "role": "success",
+        "displayName": "Ready Green",
+        "canonical": "rgb(0.35, 0.78, 0.57)",
+        "tonalRamp": ["#0e2419", "#173d2a", "#235c3e", "#2f7b52", "#3e9b68", "#59c791", "#98e0b7", "#e6f8ed"]
+      },
+      "success-surface": {
+        "role": "success-surface",
+        "displayName": "Success Surface",
+        "canonical": "rgb(0.075, 0.12, 0.10)",
+        "tonalRamp": ["#0b1712", "#11261b", "#1b3b29", "#28543a", "#39704e", "#58966f", "#8cc1a1", "#e1f1e7"]
+      },
+      "success-border": {
+        "role": "success-border",
+        "displayName": "Success Border",
+        "canonical": "rgb(0.18, 0.42, 0.30)",
+        "tonalRamp": ["#0d2117", "#163c28", "#215739", "#2e704b", "#419563", "#65bd88", "#a1d8b7", "#e8f7ed"]
+      },
+      "warning": {
+        "role": "warning",
+        "displayName": "Probe Amber",
+        "canonical": "rgb(0.96, 0.68, 0.30)",
+        "tonalRamp": ["#2b1707", "#512b0b", "#7b430f", "#a85f18", "#d27f27", "#f5ad4d", "#f9d096", "#fff0d9"]
+      },
+      "danger": {
+        "role": "danger",
+        "displayName": "Failure Red",
+        "canonical": "rgb(0.94, 0.39, 0.42)",
+        "tonalRamp": ["#2a0c12", "#50151d", "#7a202b", "#a8323e", "#cc4855", "#f0636b", "#f6a0a5", "#fee8e9"]
+      },
+      "danger-text": {
+        "role": "danger-text",
+        "displayName": "Failure Text",
+        "canonical": "rgb(0.95, 0.76, 0.77)",
+        "tonalRamp": ["#321316", "#5d2227", "#873339", "#ad4c54", "#ca7077", "#f2c2c5", "#f9dcde", "#fff2f3"]
+      },
+      "danger-surface": {
+        "role": "danger-surface",
+        "displayName": "Failure Surface",
+        "canonical": "rgb(0.16, 0.075, 0.085)",
+        "tonalRamp": ["#1c090c", "#351217", "#501a22", "#70252e", "#963640", "#c45b64", "#e59ca1", "#fbe7e8"]
+      },
+      "danger-border": {
+        "role": "danger-border",
+        "displayName": "Failure Border",
+        "canonical": "rgb(0.38, 0.14, 0.16)",
+        "tonalRamp": ["#260a0f", "#4a121b", "#6c1b28", "#8f2834", "#b83a47", "#e06770", "#f2a6ab", "#fee9ea"]
+      },
+      "shadow": {
+        "role": "shadow",
+        "displayName": "Ambient Shadow",
+        "canonical": "rgba(0, 0, 0, 0.22)"
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Product Title",
+        "purpose": "Names Demux in the identity header."
+      },
+      "heading": {
+        "displayName": "Surface Heading",
+        "purpose": "Labels the queue, output settings, and progress surfaces."
+      },
+      "body": {
+        "displayName": "Operational Body",
+        "purpose": "Carries file names, controls, guidance, and status copy."
+      },
+      "label": {
+        "displayName": "Quiet Label",
+        "purpose": "Supports compact field labels and secondary metadata."
+      }
     },
     "shadows": [
-      { "name": "panel-ambient", "value": "0 5px 18px rgba(0,0,0,0.22)", "purpose": "Separate major panels from the workspace." }
+      {
+        "name": "panel-ambient",
+        "value": "0 5px 18px rgba(0, 0, 0, 0.22)",
+        "purpose": "Separate major panels from the near-black workspace without decorative glow."
+      }
     ],
     "breakpoints": [
-      { "name": "minimum-window", "value": "860x600" },
-      { "name": "default-window", "value": "1180x760" }
+      {
+        "name": "minimum-window",
+        "value": "860x600"
+      },
+      {
+        "name": "default-window",
+        "value": "1180x760"
+      }
     ]
   },
-  "components": [],
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Starts extraction or adds the first set of media files.",
+      "html": "<button class='ds-btn-primary'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M8 5l11 7-11 7z'/></svg>Start Ripping</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: rgb(0.43, 0.36, 0.96); color: rgb(0.92, 0.93, 0.96); padding: 13px 16px; border: 1px solid rgb(0.43, 0.36, 0.96); border-radius: 12px; font: 600 14px system-ui, sans-serif; transition: background-color .15s ease, border-color .15s ease, color .15s ease; } .ds-btn-primary svg { width: 16px; height: 16px; fill: currentColor; } .ds-btn-primary:hover { background: rgb(0.50, 0.43, 1); border-color: rgb(0.54, 0.47, 1); } .ds-btn-primary:focus-visible { outline: 2px solid rgb(0.59, 0.54, 0.98); outline-offset: 2px; } .ds-btn-primary:active { background: rgb(0.36, 0.29, 0.82); border-color: rgb(0.40, 0.33, 0.90); } .ds-btn-primary:disabled { background: rgb(0.16, 0.15, 0.28); border-color: rgb(0.20, 0.19, 0.34); color: rgb(0.48, 0.50, 0.57); }"
+    },
+    {
+      "name": "Secondary Action",
+      "kind": "button",
+      "description": "Keeps folder selection and browsing available without competing with extraction.",
+      "html": "<button class='ds-btn-secondary'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M4 7h16M7 4h10l1 3H6zM6 7v13h12V7M10 11v5M14 11v5'/></svg>Add Folder</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: rgb(0.105, 0.112, 0.135); color: rgb(0.94, 0.95, 0.98); padding: 10px 16px; border: 1px solid rgb(0.24, 0.25, 0.30); border-radius: 12px; font: 500 14px system-ui, sans-serif; transition: background-color .15s ease, border-color .15s ease, color .15s ease; } .ds-btn-secondary svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; } .ds-btn-secondary:hover { background: rgb(0.14, 0.15, 0.18); border-color: rgb(0.32, 0.33, 0.39); color: white; } .ds-btn-secondary:focus-visible { outline: 2px solid rgb(0.59, 0.54, 0.98); outline-offset: 2px; } .ds-btn-secondary:active { background: rgb(0.065, 0.07, 0.087); border-color: rgb(0.28, 0.29, 0.35); } .ds-btn-secondary:disabled { background: rgb(0.075, 0.08, 0.095); border-color: rgb(0.15, 0.16, 0.19); color: rgb(0.48, 0.50, 0.57); }"
+    },
+    {
+      "name": "Destructive Action",
+      "kind": "button",
+      "description": "Removes the selected queue item and is quiet until a selection can be removed.",
+      "html": "<button class='ds-btn-danger'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M5 7h14M10 4h4l1 3H9zM7 7l1 13h8l1-13M10 10v7M14 10v7'/></svg>Remove</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: rgb(0.11, 0.085, 0.10); color: rgb(0.95, 0.76, 0.77); padding: 10px 16px; border: 1px solid rgb(0.36, 0.17, 0.20); border-radius: 12px; font: 500 14px system-ui, sans-serif; transition: background-color .15s ease, border-color .15s ease, color .15s ease; } .ds-btn-danger svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; } .ds-btn-danger:hover { background: rgb(0.18, 0.08, 0.095); border-color: rgb(0.60, 0.24, 0.27); color: rgb(1, 0.83, 0.84); } .ds-btn-danger:focus-visible { outline: 2px solid rgb(0.94, 0.39, 0.42); outline-offset: 2px; } .ds-btn-danger:active { background: rgb(0.22, 0.075, 0.09); border-color: rgb(0.94, 0.39, 0.42); color: white; } .ds-btn-danger:disabled { background: rgb(0.075, 0.08, 0.095); border-color: rgb(0.15, 0.16, 0.19); color: rgb(0.48, 0.50, 0.57); }"
+    },
+    {
+      "name": "Path Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Shows the chosen output folder beside a native Browse action.",
+      "html": "<label class='ds-field'><span>Output folder</span><input placeholder='Choose an output folder' value=''/></label>",
+      "css": ".ds-field { display: grid; gap: 7px; color: rgb(0.62, 0.64, 0.70); font: 400 13px system-ui, sans-serif; } .ds-field input { width: 100%; box-sizing: border-box; background: rgb(0.065, 0.07, 0.087); color: rgb(0.92, 0.93, 0.96); padding: 12px; border: 1px solid rgb(0.19, 0.20, 0.24); border-radius: 12px; font: 400 14px system-ui, sans-serif; transition: border-color .15s ease, background-color .15s ease; } .ds-field input::placeholder { color: rgb(0.62, 0.64, 0.70); } .ds-field input:hover { border-color: rgb(0.30, 0.27, 0.55); } .ds-field input:focus-visible { outline: 2px solid rgb(0.43, 0.36, 0.96); outline-offset: 1px; border-color: rgb(0.43, 0.36, 0.96); } .ds-field input:disabled { color: rgb(0.48, 0.50, 0.57); background: rgb(0.075, 0.08, 0.095); }"
+    },
+    {
+      "name": "Surface Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Frames a work surface with calm tonal separation and one ambient shadow.",
+      "html": "<section class='ds-panel'><h2>Output Settings</h2><p>MP3 extraction defaults and destination.</p></section>",
+      "css": ".ds-panel { background: rgb(0.085, 0.092, 0.112); color: rgb(0.92, 0.93, 0.96); padding: 18px; border: 1px solid rgb(0.17, 0.18, 0.22); border-radius: 14px; box-shadow: 0 5px 18px rgba(0, 0, 0, .22); } .ds-panel h2 { margin: 0 0 8px; font: 600 18px system-ui, sans-serif; } .ds-panel p { margin: 0; color: rgb(0.62, 0.64, 0.70); font: 400 14px system-ui, sans-serif; }"
+    },
+    {
+      "name": "Drop Zone",
+      "kind": "custom",
+      "description": "Invites file selection and communicates hover state without adding ornamental chrome.",
+      "html": "<div class='ds-drop-zone'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M6 3h8l4 4v14H6zM14 3v5h5M12 11v7M9 15l3 3 3-3'/></svg><strong>Add videos or drop a folder to begin</strong><span>Supports MP4, MKV, MOV, AVI, WMV, FLV, MPEG, and more</span></div>",
+      "css": ".ds-drop-zone { display: grid; place-items: center; gap: 10px; min-height: 150px; padding: 20px; background: rgb(0.065, 0.07, 0.087); color: rgb(0.92, 0.93, 0.96); border: 1px dashed rgb(0.31, 0.32, 0.38); border-radius: 12px; text-align: center; transition: border-color .15s ease, background-color .15s ease; } .ds-drop-zone svg { width: 42px; height: 42px; fill: none; stroke: rgb(0.48, 0.50, 0.57); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; } .ds-drop-zone strong { font: 600 17px system-ui, sans-serif; } .ds-drop-zone span { color: rgb(0.62, 0.64, 0.70); font: 400 13px system-ui, sans-serif; } .ds-drop-zone:hover, .ds-drop-zone[data-active='true'] { border-color: rgb(0.43, 0.36, 0.96); background: rgb(0.075, 0.08, 0.10); } .ds-drop-zone:focus-within { outline: 2px solid rgb(0.43, 0.36, 0.96); outline-offset: 2px; }"
+    },
+    {
+      "name": "Queue Row",
+      "kind": "custom",
+      "description": "Keeps file identity, duration, state, output settings, and source size comparable at a glance.",
+      "html": "<div class='ds-queue-row'><span class='ds-queue-index'>1</span><strong>Example Video.mp4</strong><span>00:04:15</span><span class='ds-queue-status'>Probing</span><span>MP3 · 192 kbps</span><span>24.1 MB</span></div>",
+      "css": ".ds-queue-row { display: grid; grid-template-columns: 34px minmax(180px, 7fr) 2fr 3fr 3fr 2fr; align-items: center; gap: 10px; min-height: 48px; padding: 10px 12px; color: rgb(0.92, 0.93, 0.96); border-bottom: 1px solid rgb(0.17, 0.18, 0.22); font: 400 12px system-ui, sans-serif; } .ds-queue-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px system-ui, sans-serif; } .ds-queue-index, .ds-queue-status { color: rgb(0.62, 0.64, 0.70); } .ds-queue-row:hover, .ds-queue-row[data-selected='true'] { background: rgb(0.105, 0.10, 0.16); } .ds-queue-row[data-selected='true'] { box-shadow: inset 2px 0 0 rgb(0.43, 0.36, 0.96); }"
+    },
+    {
+      "name": "Outcome Toast",
+      "kind": "custom",
+      "description": "Provides non-blocking success or failure feedback while preserving the persistent queue state.",
+      "html": "<aside class='ds-toast ds-toast-success' role='status'><strong>Extraction completed</strong><span>Example Video.mp3 is ready.</span><button>Dismiss</button></aside>",
+      "css": ".ds-toast { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; width: min(360px, 100%); padding: 14px; border-radius: 12px; font: 400 13px system-ui, sans-serif; } .ds-toast strong { font: 600 15px system-ui, sans-serif; } .ds-toast span { color: rgb(0.92, 0.93, 0.96); } .ds-toast button { grid-column: 2; grid-row: 1 / span 2; align-self: center; background: transparent; color: inherit; padding: 4px 6px; border: 1px solid currentColor; border-radius: 7px; font: 500 12px system-ui, sans-serif; } .ds-toast button:hover, .ds-toast button:focus-visible { background: rgba(255, 255, 255, .08); } .ds-toast-success { background: rgb(0.075, 0.12, 0.10); color: rgb(0.35, 0.78, 0.57); border: 1px solid rgb(0.18, 0.42, 0.30); } .ds-toast-danger { background: rgb(0.16, 0.075, 0.085); color: rgb(0.94, 0.39, 0.42); border: 1px solid rgb(0.38, 0.14, 0.16); }"
+    }
+  ],
   "narrative": {
     "northStar": "The Quiet Signal Desk",
-    "overview": "A compact native work surface where media state stays legible while external tools run.",
-    "keyCharacteristics": ["Calm dark layering", "One restrained action signal", "Explicit semantic state", "Honest capability scope"],
-    "rules": [
-      { "name": "The One Signal Rule", "body": "Violet belongs to the primary action or current work, not passive decoration.", "section": "colors" }
+    "overview": "Demux is a compact native work surface where media state stays legible while external tools run. Its character comes from calm dark layering, precise status language, and one restrained violet action signal—not ornamental chrome. Familiar desktop controls keep attention on the file, destination, encoding choices, and outcome.",
+    "keyCharacteristics": [
+      "Dense enough for operational work, with generous separation between tasks.",
+      "Violet is reserved for primary action and active work.",
+      "State is always expressed with words as well as color.",
+      "Advanced controls appear only when the engine supports them honestly."
     ],
-    "dos": ["Keep task state visible in plain language.", "Use native dialogs for local paths."],
-    "donts": ["Do not render missing metadata as zero.", "Do not add controls before their engine behavior exists."]
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Violet belongs to the primary action or current work, not passive decoration.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Keep task state visible in plain language.",
+      "Reserve the largest area for the queue and current media information.",
+      "Disable controls while their changes could race an active process.",
+      "Use native dialogs for local file and directory selection."
+    ],
+    "donts": [
+      "Don't add pause or log controls before their engine behavior exists.",
+      "Don't use violet for inactive decoration.",
+      "Don't render missing metadata as zero.",
+      "Don't introduce nested cards or decorative icon tiles."
+    ]
   }
 }
