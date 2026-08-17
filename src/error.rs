@@ -90,6 +90,12 @@ pub enum Error {
     },
     #[error("could not serialize settings: {0}")]
     PreferencesSerialize(#[from] serde_json::Error),
+    #[error("could not open external link `{url}`: {source}")]
+    ExternalLink {
+        url: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

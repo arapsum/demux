@@ -32,6 +32,35 @@ pub async fn check_dependencies() -> Result<Dependencies> {
     Ok(tokio::task::spawn_blocking(ffmpeg::detect_dependencies).await??)
 }
 
+/// Opens a trusted product link with the platform's default browser.
+pub async fn open_external_link(url: &'static str) -> Result<()> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            let mut command = std::process::Command::new("cmd");
+            command.args(["/C", "start", ""]);
+            command
+        };
+
+        #[cfg(target_os = "macos")]
+        let mut command = std::process::Command::new("open");
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let mut command = std::process::Command::new("xdg-open");
+
+        command
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|source| Error::ExternalLink {
+                url: url.to_owned(),
+                source,
+            })
+    })
+    .await??;
+    Ok(())
+}
+
 pub async fn load_preferences() -> Result<preferences::PreferenceDefaults> {
     preferences::load().await
 }
@@ -43,9 +72,10 @@ pub fn next_preferences_revision() -> u64 {
 pub async fn save_preferences(
     options: RipOptions,
     destination: DestinationPolicy,
+    window: preferences::WindowPreferences,
     revision: u64,
 ) -> Result<()> {
-    preferences::save(options, destination, revision).await
+    preferences::save(options, destination, window, revision).await
 }
 
 /// Probes one media input through the production `FFprobe` adapter.

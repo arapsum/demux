@@ -24,12 +24,40 @@ struct Preferences {
     version: u8,
     encoding: RipOptions,
     destination: DestinationPolicy,
+    window: WindowPreferences,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreferenceDefaults {
     pub encoding: RipOptions,
     pub destination: DestinationPolicy,
+    pub window: WindowPreferences,
+}
+
+/// Window behavior and the last usable desktop geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowPreferences {
+    pub remember_geometry: bool,
+    pub geometry: Option<WindowGeometry>,
+}
+
+impl Default for WindowPreferences {
+    fn default() -> Self {
+        Self {
+            remember_geometry: true,
+            geometry: None,
+        }
+    }
+}
+
+/// A serialized window position and client-area size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    pub width: u32,
+    pub height: u32,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
 }
 
 pub async fn load() -> Result<PreferenceDefaults> {
@@ -43,6 +71,7 @@ pub fn next_revision() -> u64 {
 pub async fn save(
     encoding: RipOptions,
     destination: DestinationPolicy,
+    window: WindowPreferences,
     revision: u64,
 ) -> Result<()> {
     let _guard = WRITER
@@ -53,7 +82,7 @@ pub async fn save(
         return Ok(());
     }
     LATEST_REVISION.store(revision, Ordering::Release);
-    save_to(&preferences_path()?, encoding, destination).await
+    save_to(&preferences_path()?, encoding, destination, window).await
 }
 
 async fn load_from(path: &Path) -> Result<PreferenceDefaults> {
@@ -63,6 +92,7 @@ async fn load_from(path: &Path) -> Result<PreferenceDefaults> {
             return Ok(PreferenceDefaults {
                 encoding: RipOptions::default(),
                 destination: DestinationPolicy::default(),
+                window: WindowPreferences::default(),
             });
         }
         Err(source) => {
@@ -80,10 +110,16 @@ async fn load_from(path: &Path) -> Result<PreferenceDefaults> {
     Ok(PreferenceDefaults {
         encoding: preferences.encoding,
         destination: preferences.destination,
+        window: preferences.window,
     })
 }
 
-async fn save_to(path: &Path, encoding: RipOptions, destination: DestinationPolicy) -> Result<()> {
+async fn save_to(
+    path: &Path,
+    encoding: RipOptions,
+    destination: DestinationPolicy,
+    window: WindowPreferences,
+) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| Error::PreferencesDirectoryUnavailable)?;
@@ -94,9 +130,10 @@ async fn save_to(path: &Path, encoding: RipOptions, destination: DestinationPoli
             source,
         })?;
     let contents = serde_json::to_vec_pretty(&Preferences {
-        version: 2,
+        version: 3,
         encoding,
         destination,
+        window,
     })?;
     tokio::fs::write(path, contents)
         .await
@@ -158,6 +195,7 @@ mod tests {
             PreferenceDefaults {
                 encoding: RipOptions::default(),
                 destination: DestinationPolicy::default(),
+                window: WindowPreferences::default(),
             }
         );
     }
@@ -172,9 +210,14 @@ mod tests {
             ..RipOptions::default()
         };
 
-        save_to(&path, options, DestinationPolicy::default())
-            .await
-            .unwrap();
+        save_to(
+            &path,
+            options,
+            DestinationPolicy::default(),
+            WindowPreferences::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(load_from(&path).await.unwrap().encoding, options);
 
         tokio::fs::remove_dir_all(path.parent().unwrap())
