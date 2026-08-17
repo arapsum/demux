@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Demux
+Exec=demux
+Type=Application
+Comment=Extract clean audio from video files
+Icon=demux
+Terminal=false
+Categories=Audio;AudioVideo;
+StartupNotify=true
