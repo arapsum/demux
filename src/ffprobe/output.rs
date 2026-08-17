@@ -112,6 +112,22 @@ pub(super) type FormatTags = RawTags;
 impl TryFrom<ProbeOutput> for MediaInfo {
     type Error = ProbeError;
 
+    /// Converts raw `ffprobe` JSON into Demux media metadata.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: Deserialized `ffprobe` output.
+    ///
+    /// # Returns
+    ///
+    /// Metadata for the first audio stream and supported attached artwork.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - The output contains no audio stream.
+    /// - The reported duration is not a valid floating-point number.
     fn try_from(value: ProbeOutput) -> Result<Self, Self::Error> {
         let ProbeOutput { streams, format } = value;
         let mut attached_artwork = streams.iter().filter(|stream| {

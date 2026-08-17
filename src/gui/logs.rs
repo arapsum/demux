@@ -416,6 +416,21 @@ fn format_timestamp(timestamp: SystemTime) -> String {
         .unwrap_or_else(|_| "--:--:--".to_owned())
 }
 
+/// Prompts for a log destination and writes a snapshot when one is selected.
+///
+/// # Parameters
+///
+/// - `snapshot`: Formatted `FFmpeg` log content to export.
+///
+/// # Returns
+///
+/// The saved path, or `None` when the user dismisses the file dialog.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The selected log file cannot be written.
 async fn save_snapshot(snapshot: String) -> crate::Result<Option<PathBuf>> {
     let filename = OffsetDateTime::now_utc()
         .format(&format_description!(

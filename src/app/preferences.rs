@@ -60,6 +60,20 @@ pub struct WindowGeometry {
     pub y: Option<i32>,
 }
 
+/// Loads the persisted application defaults.
+///
+/// # Returns
+///
+/// The validated encoding, destination, and window defaults, or built-in
+/// defaults when no preference file exists.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The preferences directory cannot be determined.
+/// - The preferences file cannot be read.
+/// - The stored JSON cannot be parsed.
 pub async fn load() -> Result<PreferenceDefaults> {
     load_from(&preferences_path()?).await
 }
@@ -68,6 +82,28 @@ pub fn next_revision() -> u64 {
     NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Persists the application defaults when the revision is current.
+///
+/// # Parameters
+///
+/// - `encoding`: Encoding defaults to save.
+/// - `destination`: Destination policy to save.
+/// - `window`: Window behavior and geometry to save.
+/// - `revision`: Monotonic revision identifying this save request.
+///
+/// # Returns
+///
+/// `Ok(())` after the latest requested defaults are persisted, or when a
+/// newer request has superseded this revision.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The preferences directory cannot be determined.
+/// - The preferences directory cannot be created.
+/// - The defaults cannot be serialized as JSON.
+/// - The preferences file cannot be written.
 pub async fn save(
     encoding: RipOptions,
     destination: DestinationPolicy,
@@ -85,6 +121,22 @@ pub async fn save(
     save_to(&preferences_path()?, encoding, destination, window).await
 }
 
+/// Loads defaults from one explicit preferences file.
+///
+/// # Parameters
+///
+/// - `path`: Location of the preferences file.
+///
+/// # Returns
+///
+/// The persisted defaults, or built-in defaults when the file does not exist.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The file cannot be read for a reason other than it being absent.
+/// - The file contains invalid preference JSON.
 async fn load_from(path: &Path) -> Result<PreferenceDefaults> {
     let contents = match tokio::fs::read(path).await {
         Ok(contents) => contents,
@@ -114,6 +166,27 @@ async fn load_from(path: &Path) -> Result<PreferenceDefaults> {
     })
 }
 
+/// Serializes and writes defaults to one explicit preferences file.
+///
+/// # Parameters
+///
+/// - `path`: Destination preferences file.
+/// - `encoding`: Encoding defaults to serialize.
+/// - `destination`: Destination policy to serialize.
+/// - `window`: Window behavior and geometry to serialize.
+///
+/// # Returns
+///
+/// `Ok(())` after the preferences file is written.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The file has no parent directory.
+/// - The parent directory cannot be created.
+/// - The preferences cannot be serialized as JSON.
+/// - The preferences file cannot be written.
 async fn save_to(
     path: &Path,
     encoding: RipOptions,
@@ -144,6 +217,18 @@ async fn save_to(
     Ok(())
 }
 
+/// Resolves the platform-specific preferences file location.
+///
+/// # Returns
+///
+/// The configuration path overridden by `DEMUX_CONFIG_DIR`, when set, or the
+/// standard platform configuration path.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - No supported platform configuration directory can be determined.
 fn preferences_path() -> Result<PathBuf> {
     if let Some(directory) = std::env::var_os("DEMUX_CONFIG_DIR") {
         return Ok(PathBuf::from(directory).join(PREFERENCES_FILENAME));

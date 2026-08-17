@@ -48,6 +48,21 @@ pub use self::{message::Message, state::Demux};
 
 pub(crate) type TaskResult<T> = std::result::Result<T, Arc<crate::Error>>;
 
+/// Converts a shared application result into a GUI task result.
+///
+/// # Parameters
+///
+/// - `result`: Application task result to share with the GUI.
+///
+/// # Returns
+///
+/// The successful value or the error wrapped for cheap task-message cloning.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `result` contains an application error.
 fn share_error<T>(result: crate::Result<T>) -> TaskResult<T> {
     result.map_err(Arc::new)
 }
@@ -60,7 +75,10 @@ fn share_error<T>(result: crate::Result<T>) -> TaskResult<T> {
 ///
 /// # Errors
 ///
-/// Returns an error when the window or renderer cannot be initialized.
+/// Returns an error when:
+///
+/// - The window cannot be initialized.
+/// - The selected renderer cannot be initialized.
 pub fn run() -> iced::Result {
     iced::application(Demux::new, Demux::update, Demux::view)
         .title("Demux")

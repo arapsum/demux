@@ -64,6 +64,21 @@ impl Mp3Bitrate {
 impl TryFrom<u32> for Mp3Bitrate {
     type Error = EncodingOptionError;
 
+    /// Converts a raw bitrate into a supported MP3 bitrate.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: Bitrate in kilobits per second.
+    ///
+    /// # Returns
+    ///
+    /// The matching supported MP3 bitrate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - `value` is not an MP3 bitrate supported by Demux.
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             128 => Ok(Self::Kbps128),
@@ -105,6 +120,21 @@ impl SampleRate {
 impl TryFrom<u32> for SampleRate {
     type Error = EncodingOptionError;
 
+    /// Converts a raw sample rate into a supported MP3 sample rate.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: Sample rate in hertz.
+    ///
+    /// # Returns
+    ///
+    /// The matching supported MP3 sample rate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - `value` is not an MP3 sample rate supported by Demux.
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             44_100 => Ok(Self::Hz44100),
@@ -147,6 +177,21 @@ impl ChannelMode {
 impl TryFrom<u8> for ChannelMode {
     type Error = EncodingOptionError;
 
+    /// Converts a raw channel count into a supported channel mode.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: Number of requested audio channels.
+    ///
+    /// # Returns
+    ///
+    /// The matching supported channel mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - `value` is not a channel count supported by Demux.
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             1 => Ok(Self::Mono),
@@ -214,7 +259,11 @@ impl RipOptions {
     ///
     /// # Errors
     ///
-    /// Returns an error when any supplied value is not supported by Demux.
+    /// Returns an error when:
+    ///
+    /// - The bitrate is not supported by Demux.
+    /// - The sample rate is not supported by Demux.
+    /// - The channel count is not supported by Demux.
     pub fn try_new(
         bitrate_kbps: u32,
         sample_rate_hz: u32,

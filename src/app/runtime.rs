@@ -16,6 +16,23 @@ use crate::{
 
 pub const PROBE_CONCURRENCY: usize = 4;
 
+/// Probes one input while limiting concurrent `ffprobe` processes.
+///
+/// # Parameters
+///
+/// - `job_id`: Queue identifier used for tracing the probe.
+/// - `input`: Media file to inspect.
+///
+/// # Returns
+///
+/// Metadata for the first audio stream after a probe permit is acquired.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The probe semaphore is closed.
+/// - `ffprobe` cannot inspect or convert the input.
 pub async fn probe_bounded(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
     static SEMAPHORE: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
     let semaphore = SEMAPHORE
@@ -28,11 +45,37 @@ pub async fn probe_bounded(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
 }
 
 /// Runs production dependency detection away from the GUI runtime thread.
+///
+/// # Returns
+///
+/// Version descriptions for the required `ffmpeg` and `ffprobe` executables.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The blocking dependency task cannot complete.
+/// - Either executable is missing, cannot start, or exits unsuccessfully.
 pub async fn check_dependencies() -> Result<Dependencies> {
     Ok(tokio::task::spawn_blocking(ffmpeg::detect_dependencies).await??)
 }
 
 /// Opens a trusted product link with the platform's default browser.
+///
+/// # Parameters
+///
+/// - `url`: Trusted URL to open.
+///
+/// # Returns
+///
+/// `Ok(())` after the platform browser command starts.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The blocking browser-launch task cannot complete.
+/// - The operating system cannot start the platform browser command.
 pub async fn open_external_link(url: &'static str) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
@@ -61,6 +104,18 @@ pub async fn open_external_link(url: &'static str) -> Result<()> {
     Ok(())
 }
 
+/// Loads persisted application defaults without blocking the GUI runtime.
+///
+/// # Returns
+///
+/// The stored encoding, destination, and window defaults.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The preferences directory cannot be determined.
+/// - The stored preferences cannot be read or parsed.
 pub async fn load_preferences() -> Result<preferences::PreferenceDefaults> {
     preferences::load().await
 }
@@ -69,6 +124,25 @@ pub fn next_preferences_revision() -> u64 {
     preferences::next_revision()
 }
 
+/// Persists application defaults without blocking the GUI runtime.
+///
+/// # Parameters
+///
+/// - `options`: Encoding defaults to save.
+/// - `destination`: Destination policy to save.
+/// - `window`: Window preferences to save.
+/// - `revision`: Monotonic revision identifying this save request.
+///
+/// # Returns
+///
+/// `Ok(())` after the defaults are saved or a newer revision supersedes them.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The preferences directory cannot be determined or created.
+/// - The preferences cannot be serialized or written.
 pub async fn save_preferences(
     options: RipOptions,
     destination: DestinationPolicy,
@@ -79,6 +153,22 @@ pub async fn save_preferences(
 }
 
 /// Probes one media input through the production `FFprobe` adapter.
+///
+/// # Parameters
+///
+/// - `job_id`: Queue identifier used for tracing the probe.
+/// - `input`: Media file to inspect.
+///
+/// # Returns
+///
+/// Parsed metadata for the input's first audio stream.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `ffprobe` cannot start or exits unsuccessfully.
+/// - The probe output cannot be converted into media metadata.
 pub async fn probe(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
     let span = info_span!("media_probe_job", job_id = job_id.0);
     async move { Ok(ffprobe::inspect(&input.to_string_lossy()).await?) }
@@ -104,8 +194,10 @@ pub async fn probe(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
 ///
 /// # Errors
 ///
-/// Returns an error when process setup, `FFmpeg` execution, or cancelled-output
-/// cleanup fails.
+/// Returns an error when:
+///
+/// - Process setup, progress handling, or `FFmpeg` execution fails.
+/// - Cancelled-output cleanup fails.
 pub async fn rip_with_progress(
     job_id: JobId,
     request: RipRequest,
@@ -138,6 +230,21 @@ pub async fn rip_with_progress(
     .await
 }
 
+/// Removes a partially written output after cancellation.
+///
+/// # Parameters
+///
+/// - `path`: Output path that may have been partially written.
+///
+/// # Returns
+///
+/// `Ok(())` after the partial file is removed or confirmed absent.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The partial output exists but cannot be removed.
 async fn cleanup_partial_output(path: &std::path::Path) -> Result<()> {
     match tokio::fs::remove_file(path).await {
         Ok(()) => {
@@ -153,6 +260,22 @@ async fn cleanup_partial_output(path: &std::path::Path) -> Result<()> {
 }
 
 /// Resolves an output without overwriting an existing file.
+///
+/// # Parameters
+///
+/// - `job_id`: Queue identifier used for tracing output resolution.
+/// - `requested`: Preferred output path.
+///
+/// # Returns
+///
+/// A collision-safe output path whose parent directory exists.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - Existing output paths cannot be inspected.
+/// - The resolved output directory cannot be created.
 pub async fn resolve_output(job_id: JobId, requested: PathBuf) -> Result<PathBuf> {
     let span = info_span!("resolve_rip_output", job_id = job_id.0);
     async move {

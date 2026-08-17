@@ -87,8 +87,10 @@ pub fn metadata(output: &Output) -> ProbeResult<MediaInfo> {
 ///
 /// # Errors
 ///
-/// Returns an error when `ffprobe` cannot inspect the input or its output
-/// cannot be converted into [`MediaInfo`].
+/// Returns an error when:
+///
+/// - `ffprobe` cannot inspect the input.
+/// - The probe output cannot be converted into [`MediaInfo`].
 #[tracing::instrument(name = "ffprobe_inspect", level = "debug", skip_all)]
 pub async fn inspect(input: &str) -> ProbeResult<MediaInfo> {
     tracing::trace!(input = %input, "launching ffprobe");

@@ -7,6 +7,22 @@ use crate::model::{
 
 const RIP_TARGET_EXTENSION: &str = "mp3";
 
+/// Finds a non-conflicting output path without overwriting an existing file.
+///
+/// # Parameters
+///
+/// - `requested`: Preferred output path.
+///
+/// # Returns
+///
+/// The requested path when unused, or the first available numeric-suffixed
+/// alternative in the same directory.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The filesystem cannot determine whether a candidate path exists.
 pub async fn available_output_path(requested: &Path) -> std::io::Result<PathBuf> {
     if !tokio::fs::try_exists(requested).await? {
         return Ok(requested.to_path_buf());
@@ -93,6 +109,22 @@ pub fn destination_path(
     base.join(filename)
 }
 
+/// Creates the parent directory required by an output path.
+///
+/// # Parameters
+///
+/// - `path`: Output file whose parent directory should exist.
+///
+/// # Returns
+///
+/// `Ok(())` after the parent directory exists, or immediately when `path`
+/// has no meaningful parent.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The parent directory cannot be created.
 pub async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
     let Some(parent) = path
         .parent()

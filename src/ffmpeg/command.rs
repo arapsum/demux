@@ -168,8 +168,9 @@ impl FfmpegCommandBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`FFmpegError::LoudnessMeasurementMissing`] when normalization
-    /// is enabled without a first-pass measurement.
+    /// Returns an error when:
+    ///
+    /// - Normalization is enabled without a first-pass measurement.
     ///
     /// # Panics
     ///
@@ -279,6 +280,22 @@ fn dual_mono(request: &RipRequest) -> bool {
 
 /// Runs a prepared child-process command.
 pub trait ProcessRunner: Sync {
+    /// Runs a prepared child-process command asynchronously.
+    ///
+    /// # Parameters
+    ///
+    /// - `command`: Prepared command to execute.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the captured process output.
+    ///
+    /// # Errors
+    ///
+    /// The returned future can fail when:
+    ///
+    /// - The operating system cannot start the process.
+    /// - The process output cannot be collected.
     fn run<'a>(
         &'a self,
         command: Command,
@@ -307,8 +324,11 @@ pub trait ProgressProcessRunner: Sync {
     ///
     /// # Errors
     ///
-    /// The returned future can fail when the process cannot be spawned, its
-    /// output cannot be read, or forced shutdown cannot complete.
+    /// The returned future can fail when:
+    ///
+    /// - The process cannot be spawned.
+    /// - Process output cannot be read.
+    /// - Cooperative or forced shutdown cannot complete.
     #[allow(clippy::too_many_arguments)]
     fn run_with_progress<'a>(
         &'a self,
@@ -328,6 +348,22 @@ pub trait ProgressProcessRunner: Sync {
 pub struct TokioProcessRunner;
 
 impl ProcessRunner for TokioProcessRunner {
+    /// Runs a prepared Tokio process command asynchronously.
+    ///
+    /// # Parameters
+    ///
+    /// - `command`: Prepared command to execute.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the captured process output.
+    ///
+    /// # Errors
+    ///
+    /// The returned future can fail when:
+    ///
+    /// - The operating system cannot start the process.
+    /// - The process output cannot be collected.
     fn run<'a>(
         &'a self,
         mut command: Command,
@@ -337,6 +373,30 @@ impl ProcessRunner for TokioProcessRunner {
 }
 
 impl ProgressProcessRunner for TokioProcessRunner {
+    /// Runs one Tokio process with progress and control forwarding.
+    ///
+    /// # Parameters
+    ///
+    /// - `command`: Prepared `FFmpeg` command.
+    /// - `phase`: Analysis or encoding phase represented by emitted events.
+    /// - `progress`: Channel receiving progress snapshots.
+    /// - `logs`: Channel receiving diagnostic events.
+    /// - `redactions`: Path redactions applied to diagnostics.
+    /// - `cancellation`: Signal used to stop the process.
+    /// - `pause_control`: Receiver for pause and resume requests.
+    /// - `control_events`: Channel receiving transition acknowledgements.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the process exit state.
+    ///
+    /// # Errors
+    ///
+    /// The returned future can fail when:
+    ///
+    /// - The process cannot be spawned.
+    /// - Process output cannot be read.
+    /// - Cooperative or forced shutdown cannot complete.
     #[allow(clippy::too_many_arguments)]
     fn run_with_progress<'a>(
         &'a self,
@@ -363,6 +423,31 @@ impl ProgressProcessRunner for TokioProcessRunner {
     }
 }
 
+/// Runs one `FFmpeg` phase while forwarding progress and diagnostics.
+///
+/// # Parameters
+///
+/// - `command`: Prepared `FFmpeg` command.
+/// - `phase`: Analysis or encoding phase represented by emitted events.
+/// - `progress`: Channel receiving progress snapshots.
+/// - `logs`: Channel receiving diagnostic events.
+/// - `redactions`: Path redactions applied to diagnostics.
+/// - `cancellation`: Signal used to stop the process.
+/// - `pause_control`: Receiver for pause and resume requests.
+/// - `control_events`: Channel receiving transition acknowledgements.
+/// - `grace_period`: Time to wait for cooperative cancellation.
+///
+/// # Returns
+///
+/// The completed or cancelled child-process exit state.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The process cannot be spawned or waited on.
+/// - Standard output or standard error cannot be read.
+/// - Cooperative or forced cancellation cannot complete.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn run_with_progress(
     mut command: Command,
@@ -527,6 +612,25 @@ async fn send_control_event(sender: &mpsc::Sender<PauseControlEvent>, event: Pau
     }
 }
 
+/// Sends a pause or resume signal to an `FFmpeg` process group.
+///
+/// # Parameters
+///
+/// - `child_id`: Identifier of the child whose dedicated process group owns
+///   the `FFmpeg` processes.
+/// - `operation`: Pause or resume transition to request.
+///
+/// # Returns
+///
+/// `Ok(())` after the operating system accepts the signal.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The child identifier cannot be represented as a process-group ID.
+/// - The operating system rejects the signal.
+/// - The platform does not support process suspension.
 fn signal_process_group(child_id: u32, operation: PauseControlOperation) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -562,6 +666,23 @@ fn signal_process_group(child_id: u32, operation: PauseControlOperation) -> std:
 }
 
 #[cfg(unix)]
+/// Sends a termination signal to the dedicated `FFmpeg` process group.
+///
+/// # Parameters
+///
+/// - `child_id`: Identifier of the child whose dedicated process group owns
+///   the `FFmpeg` processes.
+///
+/// # Returns
+///
+/// `Ok(())` after the operating system accepts the termination signal.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The child identifier cannot be represented as a process-group ID.
+/// - The operating system rejects the termination signal.
 fn kill_process_group(child_id: u32) -> std::io::Result<()> {
     let process_group = i32::try_from(child_id).map_err(|_| {
         std::io::Error::new(
@@ -579,6 +700,24 @@ fn kill_process_group(child_id: u32) -> std::io::Result<()> {
     }
 }
 
+/// Reads `FFmpeg` diagnostics while retaining a bounded error tail.
+///
+/// # Parameters
+///
+/// - `stderr`: Child process diagnostic stream.
+/// - `phase`: Analysis or encoding phase represented by emitted events.
+/// - `logs`: Channel receiving bounded diagnostic events.
+/// - `redactions`: Path redactions applied to each diagnostic event.
+///
+/// # Returns
+///
+/// The final bounded standard-error tail for process-failure reporting.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The child standard-error stream cannot be read.
 async fn read_stderr(
     mut stderr: tokio::process::ChildStderr,
     phase: RipPhase,
@@ -734,9 +873,11 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
     ///
     /// # Errors
     ///
-    /// Returns an error when the output directory cannot be prepared, an
-    /// `ffmpeg` process cannot run, normalization analysis fails, or the
-    /// process exits unsuccessfully.
+    /// Returns an error when:
+    ///
+    /// - The output directory cannot be prepared.
+    /// - `ffmpeg` cannot run or exits unsuccessfully.
+    /// - Normalization analysis fails.
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
         tracing::debug!("launching ffmpeg process");
         ensure_output_parent(&request.output).await?;
@@ -764,6 +905,24 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
         outcome(&output, &redactions)
     }
 
+    /// Runs the first pass required for loudness normalization.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: Input and encoding policy to analyze.
+    /// - `redactions`: Path redactions applied to process diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// A finite loudness measurement suitable for encoding's second pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - `ffmpeg` cannot run the analysis command.
+    /// - The analysis process exits unsuccessfully.
+    /// - The emitted loudness measurement is missing or invalid.
     async fn analyze(
         &self,
         request: &RipRequest,
@@ -810,8 +969,11 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
     ///
     /// # Errors
     ///
-    /// Returns an error when process setup, normalization analysis, progress
-    /// forwarding, or `ffmpeg` execution fails.
+    /// Returns an error when:
+    ///
+    /// - Process setup or progress forwarding fails.
+    /// - Normalization analysis fails.
+    /// - `ffmpeg` execution fails.
     pub async fn rip_with_progress(
         &self,
         request: &RipRequest,
@@ -873,8 +1035,11 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
     ///
     /// # Errors
     ///
-    /// Returns an error when process setup, normalization analysis, progress
-    /// forwarding, or `ffmpeg` execution fails.
+    /// Returns an error when:
+    ///
+    /// - Process setup or progress forwarding fails.
+    /// - Normalization analysis fails.
+    /// - `ffmpeg` execution fails.
     pub async fn rip_with_progress_cancellable(
         &self,
         request: &RipRequest,
@@ -952,6 +1117,29 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         }
     }
 
+    /// Runs one `FFmpeg` phase while relaying progress and diagnostics.
+    ///
+    /// # Parameters
+    ///
+    /// - `command`: Prepared command for this phase.
+    /// - `phase`: Analysis or encoding phase to assign to events.
+    /// - `progress`: Channel receiving relayed progress events.
+    /// - `logs`: Channel receiving relayed diagnostic events.
+    /// - `redactions`: Path redactions applied by the process runner.
+    /// - `cancellation`: Signal used to stop the active process.
+    /// - `pause_control`: Receiver for pause and resume requests.
+    /// - `control_events`: Channel receiving transition acknowledgements.
+    ///
+    /// # Returns
+    ///
+    /// The completed or cancelled process exit state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - The process runner cannot execute the phase.
+    /// - The process runner completes without returning an exit state.
     #[allow(clippy::too_many_arguments)]
     async fn run_phase(
         &self,
@@ -1010,6 +1198,22 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
     }
 }
 
+/// Creates the parent directory required by an `FFmpeg` output path.
+///
+/// # Parameters
+///
+/// - `path`: Output file whose parent directory should exist.
+///
+/// # Returns
+///
+/// `Ok(())` after the parent directory exists, or immediately when `path`
+/// has no meaningful parent.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - The parent directory cannot be created.
 async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
     let Some(parent) = path
         .parent()
@@ -1020,6 +1224,22 @@ async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
     tokio::fs::create_dir_all(parent).await
 }
 
+/// Converts a completed process output into a successful extraction outcome.
+///
+/// # Parameters
+///
+/// - `output`: Captured `FFmpeg` process output.
+/// - `redactions`: Path redactions applied to failure diagnostics.
+///
+/// # Returns
+///
+/// The successful process status.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `ffmpeg` exits with a non-success status.
 fn outcome(output: &Output, redactions: &FfmpegLogRedactions) -> FFmpegResult<RipOutcome> {
     if !output.status.success() {
         return Err(FFmpegError::ProcessFailed {
@@ -1046,8 +1266,10 @@ fn outcome(output: &Output, redactions: &FfmpegLogRedactions) -> FFmpegResult<Ri
 ///
 /// # Errors
 ///
-/// Returns an error when output preparation, process execution, or `ffmpeg`
-/// reports a failure.
+/// Returns an error when:
+///
+/// - The output directory cannot be prepared.
+/// - `ffmpeg` cannot run or reports a failure.
 pub async fn rip(input: impl AsRef<Path>, output: impl AsRef<Path>) -> FFmpegResult<RipOutcome> {
     FfmpegAudioRipper::<TokioProcessRunner>::default()
         .rip(&RipRequest::new(input.as_ref(), output.as_ref()))

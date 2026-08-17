@@ -28,8 +28,11 @@ impl Cli {
     ///
     /// # Errors
     ///
-    /// Returns an error when dependency detection, input reading, output path
-    /// construction, or the workflow fails.
+    /// Returns an error when:
+    ///
+    /// - Dependency detection fails.
+    /// - Interactive input cannot be read.
+    /// - The workflow reports a failure.
     pub async fn run(&mut self, app: &mut App) -> Result<()> {
         let workflow = RipWorkflow::new(
             SystemDependencyChecker,
@@ -49,6 +52,17 @@ impl Cli {
         Ok(())
     }
 
+    /// Reads and trims the source-media path from standard input.
+    ///
+    /// # Returns
+    ///
+    /// The user-supplied source path without leading or trailing whitespace.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - Standard input cannot be read.
     fn read_input_path() -> Result<String> {
         println!("==== Input video to be ripped ====");
         let mut input = String::new();
@@ -56,6 +70,21 @@ impl Cli {
         Ok(input.trim().to_owned())
     }
 
+    /// Reads output overrides and derives the destination path.
+    ///
+    /// # Parameters
+    ///
+    /// - `input`: Source path used when the user leaves an output field blank.
+    ///
+    /// # Returns
+    ///
+    /// The output path derived from the entered directory and filename.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - Standard input cannot be read.
     fn read_output_path(input: &str) -> Result<String> {
         println!("==== Output directory (leave blank to use the input directory) ====");
         let mut output_directory = String::new();

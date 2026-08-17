@@ -33,8 +33,11 @@ impl LoudnessMeasurement {
     ///
     /// # Errors
     ///
-    /// Returns an error when the measurement block is missing, malformed, or
-    /// contains a non-finite value.
+    /// Returns an error when:
+    ///
+    /// - The measurement block is missing.
+    /// - The measurement block is malformed.
+    /// - A measurement value is non-finite.
     pub fn parse(stderr: &[u8]) -> FFmpegResult<Self> {
         let text = String::from_utf8_lossy(stderr);
         let mut candidate = String::new();
@@ -103,6 +106,23 @@ struct RawMeasurement {
 }
 
 impl RawMeasurement {
+    /// Parses one finite numeric value from a loudness measurement field.
+    ///
+    /// # Parameters
+    ///
+    /// - `field`: Name of the loudness field being parsed.
+    /// - `value`: JSON value reported for the field.
+    ///
+    /// # Returns
+    ///
+    /// The finite numeric field value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when:
+    ///
+    /// - `value` is neither a number nor a numeric string.
+    /// - The parsed number is non-finite.
     fn number(field: &'static str, value: &serde_json::Value) -> FFmpegResult<f64> {
         let number = match value {
             serde_json::Value::Number(number) => number.as_f64(),

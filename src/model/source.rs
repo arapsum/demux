@@ -28,8 +28,11 @@ impl SourceHierarchy {
     ///
     /// # Errors
     ///
-    /// Returns an error when `root` is not absolute or the relative path is
-    /// empty, absolute, or contains parent/current-directory components.
+    /// Returns an error when:
+    ///
+    /// - `root` is not absolute.
+    /// - The relative path is empty or absolute.
+    /// - The relative path contains parent or current-directory components.
     pub fn new(
         root: impl Into<PathBuf>,
         relative_path: impl Into<PathBuf>,

@@ -149,8 +149,11 @@ impl PauseControlHandle {
     ///
     /// # Errors
     ///
-    /// Returns an error when the target is unsupported, the runner has closed,
-    /// or another request already occupies the bounded channel.
+    /// Returns an error when:
+    ///
+    /// - The current target does not support process suspension.
+    /// - The process runner has closed.
+    /// - Another request already occupies the bounded channel.
     pub fn request(
         &self,
         operation: PauseControlOperation,

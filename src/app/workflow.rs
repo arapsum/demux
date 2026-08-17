@@ -74,7 +74,9 @@ impl<D: DependencyChecker, P, R> RipWorkflow<D, P, R> {
     ///
     /// # Errors
     ///
-    /// Returns the dependency error reported by the checker.
+    /// Returns an error when:
+    ///
+    /// - The dependency checker reports an unavailable or unusable executable.
     pub fn detect_dependencies(
         &self,
         app: &mut App,
