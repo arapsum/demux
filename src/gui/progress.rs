@@ -23,6 +23,7 @@ use super::{
     },
 };
 
+/// Effects requested after the progress surface handles an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     None,
@@ -32,6 +33,7 @@ pub enum Action {
     ResumeRequested(JobId),
 }
 
+/// Final extraction classification displayed by the progress surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalStatus {
     Completed,
@@ -39,6 +41,7 @@ pub enum TerminalStatus {
     Failed,
 }
 
+/// Events produced by the active-extraction progress surface.
 #[derive(Debug, Clone)]
 pub enum Message {
     Started {
@@ -70,6 +73,7 @@ pub enum Message {
     TogglePause,
 }
 
+/// Internal lifecycle state for the active progress card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
     Running,
@@ -82,6 +86,7 @@ enum Status {
     Failed,
 }
 
+/// Live data rendered for the currently active extraction.
 #[derive(Debug)]
 struct ActiveProgress {
     job_id: JobId,
@@ -93,6 +98,7 @@ struct ActiveProgress {
     status: Status,
 }
 
+/// Owns the active-extraction progress card and its controls.
 #[derive(Debug)]
 pub struct Progress {
     active: Option<ActiveProgress>,

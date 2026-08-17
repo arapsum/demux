@@ -11,6 +11,7 @@ use crate::{
 
 use super::services::{AudioRipper, DependencyChecker, MediaProbe};
 
+/// External-work stage where a workflow failure occurred.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkflowStage {
     Probing,

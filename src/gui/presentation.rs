@@ -9,6 +9,7 @@ use crate::{
 
 use super::style::{ACCENT, DANGER, SUCCESS, TEXT_MUTED, WARNING};
 
+/// View-ready label and color derived from dependency availability.
 pub struct DependencyPresentation {
     pub(crate) label: &'static str,
     pub(crate) color: Color,
@@ -33,6 +34,7 @@ impl From<&DependencyState> for DependencyPresentation {
     }
 }
 
+/// View-ready label and color derived from a queue job status.
 pub struct StatusPresentation {
     pub(crate) label: &'static str,
     pub(crate) color: Color,
@@ -101,6 +103,7 @@ impl From<&JobStatus> for StatusPresentation {
     }
 }
 
+/// View-ready queue-row data derived from a domain job.
 pub struct JobPresentation {
     pub(crate) id: JobId,
     pub(crate) filename: String,

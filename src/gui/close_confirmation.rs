@@ -4,11 +4,13 @@ use iced::{Element, Font, Padding};
 
 use super::style::{DANGER_TEXT, TEXT_MUTED, destructive_action, dialog_panel, secondary_action};
 
+/// Owns the confirmation dialog shown when closing during extraction.
 #[derive(Debug, Default)]
 pub struct CloseConfirmation {
     open: bool,
 }
 
+/// Events produced by the close-confirmation dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Message {
     Open,
@@ -16,6 +18,7 @@ pub enum Message {
     CancelAndClose,
 }
 
+/// Effects requested after a close-confirmation decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     None,

@@ -1,5 +1,6 @@
 use std::time::{Duration, SystemTime};
 
+/// `FFmpeg` phase that produced progress or diagnostic data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RipPhase {
     Analyzing,
@@ -62,6 +63,7 @@ impl FfmpegLogEvent {
     }
 }
 
+/// One progress update tagged with the `FFmpeg` phase that produced it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RipProgressEvent {
     pub phase: RipPhase,
@@ -78,6 +80,7 @@ pub struct FfmpegProgress {
     pub status: ProgressStatus,
 }
 
+/// Completion indicator decoded from `FFmpeg`'s machine-readable progress stream.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ProgressStatus {
     #[default]

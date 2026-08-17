@@ -5,6 +5,7 @@ use std::sync::{
 
 use tokio::sync::Notify;
 
+/// Shared atomic state backing one cancellation handle and signal pair.
 #[derive(Debug, Default)]
 struct CancellationState {
     requested: AtomicBool,

@@ -12,6 +12,7 @@ pub fn chrome<'a, Message: 'a>(active: bool) -> Element<'a, Message> {
         .into()
 }
 
+/// Canvas program that draws the highlighted dashed file-drop boundary.
 #[derive(Debug, Clone, Copy)]
 struct DropZoneChrome {
     active: bool,

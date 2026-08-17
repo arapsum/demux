@@ -12,6 +12,7 @@ use super::{
     },
 };
 
+/// Owns Settings-dialog state and emits application-level preference actions.
 #[derive(Debug)]
 pub struct ApplicationSettings {
     open: bool,
@@ -19,6 +20,7 @@ pub struct ApplicationSettings {
     checking_dependencies: bool,
 }
 
+/// Events produced by the application Settings dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Message {
     Open,
@@ -30,6 +32,7 @@ pub enum Message {
     ResetCancelled,
 }
 
+/// Effects requested by the Settings dialog after handling a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     None,

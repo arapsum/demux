@@ -18,12 +18,14 @@ const SUCCESS_DURATION: Duration = Duration::from_secs(6);
 const WARNING_DURATION: Duration = Duration::from_secs(8);
 const FAILURE_DURATION: Duration = Duration::from_secs(10);
 
+/// Events used to dismiss one or all visible toast notifications.
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
     Dismiss(ToastId),
     DismissAll,
 }
 
+/// Stable identifier assigned to one toast notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToastId(u64);
 
@@ -33,6 +35,7 @@ impl ToastId {
     }
 }
 
+/// Semantic severity used to style a toast notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastStatus {
     Success,
@@ -40,6 +43,7 @@ pub enum ToastStatus {
     Danger,
 }
 
+/// A short-lived user notification with a title, body, and severity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Toast {
     pub(crate) id: ToastId,
@@ -48,6 +52,7 @@ pub struct Toast {
     pub(crate) status: ToastStatus,
 }
 
+/// Owns queued toast notifications and their automatic-dismiss tasks.
 #[derive(Debug)]
 pub struct Notifications {
     toasts: Vec<Toast>,
@@ -153,6 +158,7 @@ impl Toast {
     }
 }
 
+/// Iced overlay widget that renders application content with visible toasts.
 pub struct Manager<'a> {
     content: Element<'a, AppMessage>,
     toasts: Vec<Element<'a, AppMessage>>,
@@ -378,6 +384,7 @@ impl Widget<AppMessage, Theme, Renderer> for Manager<'_> {
     }
 }
 
+/// Overlay implementation that positions toast elements over application content.
 struct ToastOverlay<'a, 'b> {
     position: Point,
     viewport: Rectangle,

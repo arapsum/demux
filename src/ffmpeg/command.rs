@@ -83,6 +83,7 @@ pub struct RipOutcome {
 }
 
 /// Terminal result of a cancellable extraction.
+/// Terminal outcome of a cancellable extraction process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RipTermination {
     Completed(RipOutcome),
@@ -90,6 +91,7 @@ pub enum RipTermination {
 }
 
 /// Raw process result produced by a cancellable process runner.
+/// Raw process output paired with cancellation state from a progress runner.
 #[derive(Debug)]
 pub enum ProcessExit {
     Exited(Output),

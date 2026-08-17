@@ -18,6 +18,7 @@ static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
 static LATEST_REVISION: AtomicU64 = AtomicU64::new(0);
 static WRITER: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
+/// On-disk representation of Demux's versioned user preferences.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
@@ -27,6 +28,7 @@ struct Preferences {
     window: WindowPreferences,
 }
 
+/// Encoding, destination, and window defaults restored when Demux starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreferenceDefaults {
     pub encoding: RipOptions,
@@ -35,6 +37,7 @@ pub struct PreferenceDefaults {
 }
 
 /// Window behavior and the last usable desktop geometry.
+/// Persisted policy for restoring the application window geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WindowPreferences {

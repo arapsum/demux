@@ -284,6 +284,7 @@ impl RipOptions {
     }
 }
 
+/// Unsupported primitive encoding value rejected at the model boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum EncodingOptionError {
     #[error("unsupported MP3 bitrate: {0} kbps")]

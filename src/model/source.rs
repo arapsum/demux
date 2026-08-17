@@ -75,6 +75,7 @@ impl SourceHierarchy {
     }
 }
 
+/// Invalid source-folder provenance rejected during intake.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SourceHierarchyError {
     #[error("source folder is not absolute: {0}")]
@@ -90,6 +91,7 @@ const fn default_enabled() -> bool {
 }
 
 /// Destination behavior captured for every job at enqueue time.
+/// Destination behavior captured with each queued extraction job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DestinationPolicy {

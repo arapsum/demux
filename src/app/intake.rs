@@ -5,18 +5,21 @@ use crate::model::source::SourceHierarchy;
 pub const SUPPORTED_EXTENSIONS: &[&str] =
     &["mp4", "mkv", "mov", "avi", "wmv", "flv", "mpeg", "mpg"];
 
+/// A requested path that could not be accepted into the media queue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedInput {
     pub path: PathBuf,
     pub reason: String,
 }
 
+/// The accepted and rejected paths discovered during one intake operation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IntakeResult {
     pub accepted: Vec<AcceptedInput>,
     pub rejected: Vec<RejectedInput>,
 }
 
+/// A canonical supported media file accepted for queueing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptedInput {
     pub path: PathBuf,

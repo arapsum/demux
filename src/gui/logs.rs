@@ -22,6 +22,7 @@ const MAX_LINES: usize = 2_000;
 const MAX_BYTES: usize = 512 * 1024;
 const LOG_SCROLL_ID: &str = "ffmpeg-log-scroll";
 
+/// Terminal status used to delimit retained log entries for one job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobTerminalStatus {
     Completed,
@@ -29,6 +30,7 @@ pub enum JobTerminalStatus {
     Cancelled,
 }
 
+/// Events produced by the bounded `FFmpeg` log surface.
 #[derive(Debug, Clone)]
 pub enum Message {
     JobStarted {
@@ -53,6 +55,7 @@ pub enum Message {
     SaveCompleted(TaskResult<Option<PathBuf>>),
 }
 
+/// Effects requested after the log surface handles an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     None,
@@ -60,6 +63,7 @@ pub enum Action {
     SaveFailed(String),
 }
 
+/// Visual classification assigned to one retained diagnostic line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tone {
     Normal,
@@ -81,6 +85,7 @@ impl Tone {
     }
 }
 
+/// One timestamped, redacted diagnostic line retained by the log surface.
 #[derive(Debug, Clone)]
 struct LogEntry {
     job_id: JobId,
@@ -105,6 +110,7 @@ impl LogEntry {
     }
 }
 
+/// Owns the bounded, scrollable `FFmpeg` diagnostic log.
 #[derive(Debug)]
 pub struct Logs {
     entries: VecDeque<LogEntry>,

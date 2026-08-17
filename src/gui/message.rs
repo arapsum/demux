@@ -8,6 +8,7 @@ use super::{
     about, application_settings, close_confirmation, logs, output_settings, progress, queue, toast,
 };
 
+/// Root messages routed between the Demux shell and its independent surfaces.
 #[derive(Debug, Clone)]
 pub enum Message {
     DependenciesChecked(TaskResult<Dependencies>),
@@ -54,6 +55,7 @@ pub enum Message {
     Notifications(toast::Message),
 }
 
+/// Keyboard commands recognized by the application shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shortcut {
     AddFiles,

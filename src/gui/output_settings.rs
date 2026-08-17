@@ -21,6 +21,7 @@ use super::{
     style::{TEXT_MUTED, inset_panel, panel, secondary_action, settings_select},
 };
 
+/// Events produced by the output-settings surface.
 #[derive(Debug, Clone)]
 pub enum Message {
     FormatChanged(OutputFormat),
@@ -36,6 +37,7 @@ pub enum Message {
     FolderSelected(Option<PathBuf>),
 }
 
+/// Effects requested after output settings change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     None,
@@ -44,6 +46,7 @@ pub enum Action {
     DestinationChanged(DestinationPolicy),
 }
 
+/// Owns editable encoding and destination defaults for queued jobs.
 #[derive(Debug)]
 pub struct OutputSettings {
     folder: String,

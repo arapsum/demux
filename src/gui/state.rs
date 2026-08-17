@@ -13,6 +13,7 @@ use super::queue::Queue;
 use super::toast::Notifications;
 use super::window_state::WindowState;
 
+/// Composition root that wires each GUI surface into the Demux application shell.
 #[derive(Debug)]
 pub struct Demux {
     pub(crate) dependency_state: DependencyState,

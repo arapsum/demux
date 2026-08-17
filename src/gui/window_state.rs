@@ -5,6 +5,7 @@ use crate::app::preferences::{WindowGeometry, WindowPreferences};
 pub const DEFAULT_WINDOW_SIZE: Size = Size::new(1_180.0, 900.0);
 pub const MIN_WINDOW_SIZE: Size = Size::new(860.0, 720.0);
 
+/// Tracks live window geometry and the persisted geometry policy.
 #[derive(Debug)]
 pub struct WindowState {
     preferences: WindowPreferences,

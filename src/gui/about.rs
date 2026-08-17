@@ -11,11 +11,13 @@ const PROJECT_URL: &str = "https://github.com/arapsum/demux";
 const FFMPEG_URL: &str = "https://ffmpeg.org/";
 const LICENSE_URL: &str = "https://www.gnu.org/licenses/gpl-3.0.html";
 
+/// Owns visibility and link actions for the About dialog.
 #[derive(Debug)]
 pub struct About {
     open: bool,
 }
 
+/// Events produced by controls in the About dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Message {
     Open,
@@ -25,6 +27,7 @@ pub enum Message {
     OpenLicense,
 }
 
+/// Trusted external resources exposed by the About dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Link {
     Project,
@@ -32,6 +35,7 @@ pub enum Link {
     License,
 }
 
+/// Effects requested by the About dialog after handling a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     None,

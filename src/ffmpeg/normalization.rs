@@ -10,6 +10,7 @@ pub const OUTPUT_TRUE_PEAK_LIMIT: f64 = -1.0;
 /// A ceiling rather than a compression target: preserve the source dynamics.
 pub const LRA_CEILING: f64 = 50.0;
 
+/// First-pass loudness values required to build a normalized encoding command.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LoudnessMeasurement {
     pub integrated_lufs: f64,
@@ -96,6 +97,7 @@ impl LoudnessMeasurement {
     }
 }
 
+/// Raw JSON fields emitted by `FFmpeg`'s `loudnorm` analysis filter.
 #[derive(Debug, Deserialize)]
 struct RawMeasurement {
     input_i: serde_json::Value,

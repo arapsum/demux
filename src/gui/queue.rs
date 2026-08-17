@@ -31,6 +31,7 @@ use super::{
 const DROP_BATCH_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
 const VISIBLE_JOB_BATCH: usize = 50;
 
+/// Events produced by the queue and media-intake surface.
 #[derive(Debug, Clone)]
 pub enum Message {
     AddFiles,
@@ -67,6 +68,7 @@ pub enum Message {
     },
 }
 
+/// Effects requested after the queue handles an event.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
@@ -90,12 +92,14 @@ pub enum Action {
     },
 }
 
+/// Internal terminal classification used to advance queue execution.
 enum Finish {
     Completed,
     Cancelled,
     Failed,
 }
 
+/// Owns queue jobs, selection, asynchronous intake, and run coordination.
 #[derive(Debug)]
 pub struct Queue {
     jobs: Vec<RipJob>,
