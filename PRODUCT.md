@@ -45,6 +45,10 @@ Demux is a cross-platform desktop utility used with local media files and locall
   decoded ceiling) while showing analysis and encoding as separate phases.
 - Preserve the contents of selected folder imports under the output directory,
   with traversal-safe relative paths and collision-safe filenames.
+- Stream bounded, timestamped FFmpeg diagnostics for the active and completed
+  queue jobs, with clear and native Save Log actions.
+- Retain at most 2,000 user-facing log lines or 512 KiB, redact parent paths
+  while retaining filenames, and keep structured tracing independent.
 - Pause remains a later, platform-dependent milestone.
 
 ## Brand Commitments

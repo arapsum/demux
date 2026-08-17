@@ -111,12 +111,13 @@ controls, and 12–13px muted text for metadata and guidance.
 
 ## Layout
 
-The desktop shell opens at 1180×760 with a minimum of 860×600. A compact
-identity header sits over a 70/30 work/settings split. The left side owns file
-selection, queue information, metadata, and errors. The right side owns MP3
-encoding defaults, destination, selected status, dependency status, and the
-primary action anchored near the bottom. Outer padding is 24–26px; major gaps
-are 18px; grouped controls use 7–14px.
+The desktop shell opens at 1180×900 with a minimum of 860×720. A compact
+identity header sits over a 70/30 work/settings split, followed by a full-width
+FFmpeg log surface. The left side owns file selection, queue information,
+metadata, and errors. The right side owns MP3 encoding defaults, destination,
+selected status, dependency status, and the primary action anchored near the
+bottom. Outer padding is 24–26px; major gaps are 18px; grouped controls use
+7–14px.
 
 ## Elevation & Depth
 
@@ -204,6 +205,18 @@ misleading zero, while terminal success
 sets known-duration progress to 100 percent even if a final snapshot was
 dropped under load.
 
+### FFmpeg Log Surface
+
+The log surface spans the full shell width beneath the queue/settings
+workspace and remains bounded in height. Its near-black inset uses compact
+monospaced rows with local timestamps, job number, phase, and restrained
+semantic emphasis for details, warnings, failures, and dropped-line notices.
+Earlier jobs remain visible while the active job is followed automatically;
+scrolling upward pauses follow mode until the user returns to the tail. Clear
+removes retained UI rows without changing tracing. Save Log opens a native
+dialog and writes exactly the retained, path-redacted rows as UTF-8. Direct
+selection is intentionally deferred; export is the reliable copy path.
+
 ### Intake Surface
 
 File intake begins with a large dashed drop target containing a restrained
@@ -235,8 +248,8 @@ remain for ten seconds. Every notice also offers an explicit Dismiss action.
 
 ### Don't:
 
-- **Don't** add pause or log controls before their
-  engine behavior exists.
+- **Don't** turn the log surface into a terminal emulator or expose unbounded
+  process output.
 - **Don't** use violet for inactive decoration.
 - **Don't** render missing metadata as zero.
 - **Don't** introduce nested cards or decorative icon tiles.

@@ -320,6 +320,11 @@ detail.
 
 ## Milestone 8 — FFmpeg log surface
 
+**Status: complete.** FFmpeg stderr is decoded incrementally into bounded,
+job-associated events. The GUI retains at most 2,000 lines or 512 KiB, follows
+the active job, redacts parent directories, and supports clearing or exporting
+the visible snapshot without affecting structured tracing.
+
 Purpose: make diagnostics visible without replacing structured tracing.
 
 ### Engine first

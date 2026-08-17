@@ -2,12 +2,12 @@
 
 Demux is a native Rust desktop utility for extracting audio from video files with [FFmpeg](https://ffmpeg.org/). Its goal is to make a common command-line workflow feel clear and approachable: choose your videos, configure the output, start the queue, and watch the work happen.
 
-> **Status:** early development. Demux now has a functional first Iced shell for
+> **Status:** early development. Demux now has a functional Iced shell for
 > selecting and probing multiple videos, then extracting every eligible job
 > sequentially with configurable MP3 settings, two-pass EBU R128 normalization,
-> folder-preserving destinations, live progress, and estimates. Safe queue
-> cancellation is implemented; the complete reference interface remains
-> planned.
+> folder-preserving destinations, live progress, estimates, and a bounded
+> exportable FFmpeg log. Safe queue cancellation is implemented; the complete
+> reference interface remains planned.
 
 ## Product direction
 
@@ -68,7 +68,7 @@ Application model
 FFmpeg service
   ├── ffprobe: inspect media
   ├── ffmpeg: extract audio
-  └── progress/log events: update the UI
+  └── bounded progress/log events: update the UI
 ```
 
 This separation keeps process management out of the view layer and makes the FFmpeg integration testable without launching the desktop application.
@@ -89,6 +89,7 @@ settings, and notifications use this structure today.
 Demux
   ├── Queue            → file intake, probing, selection, and job presentation
   ├── Progress         → active extraction measurements and estimates
+  ├── Logs             → bounded FFmpeg output, retention, and export
   ├── OutputSettings  → folder selection and Start action
   └── Notifications   → toast lifecycle and overlay
 ```
@@ -144,7 +145,7 @@ connects each reference-interface feature to its required backend behavior.
 - [x] Add the first Iced application shell and desktop layout.
 - [x] Define queue, settings, and job models.
 - [x] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
-- [ ] Implement cancellation and log streaming.
+- [x] Implement cancellation and bounded log streaming/export.
 - [x] Connect multi-file and folder intake, desktop drops, queue selection, and removal.
 - [x] Connect sequential queue execution and queue-aware completion summaries.
 - [x] Connect the progress panel.

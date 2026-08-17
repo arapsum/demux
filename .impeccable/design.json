@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-14T15:08:30+03:00",
+  "generatedAt": "2026-08-17T00:00:00+03:00",
   "title": "Design System: Demux",
   "extensions": {
     "colorMeta": {
@@ -158,11 +158,11 @@
     "breakpoints": [
       {
         "name": "minimum-window",
-        "value": "860x600"
+        "value": "860x720"
       },
       {
         "name": "default-window",
-        "value": "1180x760"
+        "value": "1180x900"
       }
     ]
   },
@@ -225,6 +225,13 @@
       "description": "Provides non-blocking success or failure feedback while preserving the persistent queue state.",
       "html": "<aside class='ds-toast ds-toast-success' role='status'><strong>Extraction completed</strong><span>Example Video.mp3 is ready.</span><button>Dismiss</button></aside>",
       "css": ".ds-toast { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; width: min(360px, 100%); padding: 14px; border-radius: 12px; font: 400 13px system-ui, sans-serif; } .ds-toast strong { font: 600 15px system-ui, sans-serif; } .ds-toast span { color: rgb(0.92, 0.93, 0.96); } .ds-toast button { grid-column: 2; grid-row: 1 / span 2; align-self: center; background: transparent; color: inherit; padding: 4px 6px; border: 1px solid currentColor; border-radius: 7px; font: 500 12px system-ui, sans-serif; } .ds-toast button:hover, .ds-toast button:focus-visible { background: rgba(255, 255, 255, .08); } .ds-toast-success { background: rgb(0.075, 0.12, 0.10); color: rgb(0.35, 0.78, 0.57); border: 1px solid rgb(0.18, 0.42, 0.30); } .ds-toast-danger { background: rgb(0.16, 0.075, 0.085); color: rgb(0.94, 0.39, 0.42); border: 1px solid rgb(0.38, 0.14, 0.16); }"
+    },
+    {
+      "name": "FFmpeg Log Surface",
+      "kind": "custom",
+      "description": "Shows bounded, job-associated FFmpeg diagnostics with tail-follow, clear, and native export actions.",
+      "html": "<section class='ds-log'><header><h2>FFmpeg Log</h2><button>Clear Log</button><button>Save Log…</button></header><pre>[12:34:10] [job 1] Input #0, mov,mp4…</pre></section>",
+      "css": ".ds-log { display: grid; gap: 10px; min-height: 170px; padding: 14px 16px; background: rgb(0.085, 0.092, 0.112); color: rgb(0.92, 0.93, 0.96); border: 1px solid rgb(0.17, 0.18, 0.22); border-radius: 14px; } .ds-log pre { min-height: 120px; margin: 0; overflow: auto; padding: 12px; background: rgb(0.065, 0.07, 0.087); border: 1px solid rgb(0.19, 0.20, 0.24); border-radius: 12px; font: 400 12px ui-monospace, monospace; line-height: 1.45; }"
     }
   ],
   "narrative": {
@@ -250,7 +257,7 @@
       "Use native dialogs for local file and directory selection."
     ],
     "donts": [
-      "Don't add pause or log controls before their engine behavior exists.",
+      "Don't turn the log surface into a terminal emulator or expose unbounded process output.",
       "Don't use violet for inactive decoration.",
       "Don't render missing metadata as zero.",
       "Don't introduce nested cards or decorative icon tiles."
