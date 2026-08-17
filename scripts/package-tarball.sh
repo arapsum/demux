@@ -54,6 +54,9 @@ install -D -m 644 "${icon_file}" \
 
 
 tar -C "${output_directory}" -czf "${archive_path}" "${bundle_name}"
-sha256sum "${archive_path}" >"${checksum_path}"
+(
+    cd "${output_directory}"
+    sha256sum "${bundle_name}.tar.gz" >"${bundle_name}.tar.gz.sha256"
+)
 
 printf 'Created release bundle:\n  %s\n  %s\n' "${archive_path}" "${checksum_path}"
