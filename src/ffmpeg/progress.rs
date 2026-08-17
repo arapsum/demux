@@ -1,9 +1,65 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RipPhase {
     Analyzing,
     Encoding,
+}
+
+/// One user-facing line emitted by an `FFmpeg` phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegLogEvent {
+    pub timestamp: SystemTime,
+    pub phase: RipPhase,
+    pub message: String,
+    pub omitted: Option<usize>,
+}
+
+impl FfmpegLogEvent {
+    /// Creates a normal `FFmpeg` output event.
+    ///
+    /// # Parameters
+    ///
+    /// - `timestamp`: Wall-clock time when the line was observed.
+    /// - `phase`: Extraction phase that produced the line.
+    /// - `message`: Sanitized `FFmpeg` output text.
+    ///
+    /// # Returns
+    ///
+    /// A user-facing output event without an omission marker.
+    #[must_use]
+    pub const fn line(timestamp: SystemTime, phase: RipPhase, message: String) -> Self {
+        Self {
+            timestamp,
+            phase,
+            message,
+            omitted: None,
+        }
+    }
+
+    /// Creates an event describing lines dropped under bounded backpressure.
+    ///
+    /// # Parameters
+    ///
+    /// - `timestamp`: Wall-clock time when the omission was recorded.
+    /// - `phase`: Extraction phase that dropped the lines.
+    /// - `count`: Number of lines that were not retained.
+    ///
+    /// # Returns
+    ///
+    /// A user-facing omission event that preserves the dropped-line count.
+    #[must_use]
+    pub fn omitted(timestamp: SystemTime, phase: RipPhase, count: usize) -> Self {
+        Self {
+            timestamp,
+            phase,
+            message: format!(
+                "{count} FFmpeg line{} omitted because the log consumer was busy",
+                if count == 1 { " was" } else { "s were" }
+            ),
+            omitted: Some(count),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

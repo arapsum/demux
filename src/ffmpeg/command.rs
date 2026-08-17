@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     process::{Output, Stdio},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -11,12 +11,16 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 use crate::ffmpeg::{
-    CancellationSignal, FFmpegError, FFmpegResult, FILTER_TRUE_PEAK, FfmpegProgress, LRA_CEILING,
-    LoudnessMeasurement, ProgressParser, RipPhase, RipProgressEvent, TARGET_INTEGRATED_LUFS,
+    CancellationSignal, FFmpegError, FFmpegResult, FILTER_TRUE_PEAK, FfmpegLogEvent,
+    FfmpegProgress, LRA_CEILING, LoudnessMeasurement, ProgressParser, RipPhase, RipProgressEvent,
+    TARGET_INTEGRATED_LUFS,
 };
 use crate::model::{encoding::RipOptions, media::MediaInfo};
 
 const CANCELLATION_GRACE_PERIOD: Duration = Duration::from_secs(3);
+const STDERR_TAIL_LIMIT: usize = 64 * 1024;
+const STDERR_READ_BUFFER: usize = 8 * 1024;
+const LOG_LINE_LIMIT: usize = 8 * 1024;
 
 /// Describes an extraction without coupling it to process execution.
 ///
@@ -90,6 +94,40 @@ pub enum RipTermination {
 pub enum ProcessExit {
     Exited(Output),
     Cancelled { output: Output, forced: bool },
+}
+
+/// Paths that are replaced before `FFmpeg` output is exposed to the UI.
+#[derive(Debug, Clone, Default)]
+pub struct FfmpegLogRedactions {
+    replacements: Vec<(String, String)>,
+}
+
+impl FfmpegLogRedactions {
+    #[must_use]
+    fn for_request(request: &RipRequest) -> Self {
+        let mut replacements = Vec::new();
+        for (path, label) in [(&request.input, "<input>"), (&request.output, "<output>")] {
+            let path_text = path.to_string_lossy().into_owned();
+            if path_text.is_empty() {
+                continue;
+            }
+            let filename = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("file");
+            replacements.push((path_text, format!("{label}/{filename}")));
+        }
+        replacements.sort_by_key(|replacement| std::cmp::Reverse(replacement.0.len()));
+        Self { replacements }
+    }
+
+    fn apply(&self, line: &str) -> String {
+        self.replacements
+            .iter()
+            .fold(line.to_owned(), |line, (path, replacement)| {
+                line.replace(path, replacement)
+            })
+    }
 }
 
 /// Builds `FFmpeg` commands from extraction policy.
@@ -252,7 +290,10 @@ pub trait ProgressProcessRunner: Sync {
     fn run_with_progress<'a>(
         &'a self,
         command: Command,
+        phase: RipPhase,
         progress: mpsc::Sender<FfmpegProgress>,
+        logs: mpsc::Sender<FfmpegLogEvent>,
+        redactions: FfmpegLogRedactions,
         cancellation: CancellationSignal,
     ) -> Pin<Box<dyn Future<Output = std::io::Result<ProcessExit>> + Send + 'a>>;
 }
@@ -274,12 +315,18 @@ impl ProgressProcessRunner for TokioProcessRunner {
     fn run_with_progress<'a>(
         &'a self,
         command: Command,
+        phase: RipPhase,
         progress: mpsc::Sender<FfmpegProgress>,
+        logs: mpsc::Sender<FfmpegLogEvent>,
+        redactions: FfmpegLogRedactions,
         cancellation: CancellationSignal,
     ) -> Pin<Box<dyn Future<Output = std::io::Result<ProcessExit>> + Send + 'a>> {
         Box::pin(run_with_progress(
             command,
+            phase,
             progress,
+            logs,
+            redactions,
             cancellation,
             CANCELLATION_GRACE_PERIOD,
         ))
@@ -288,7 +335,10 @@ impl ProgressProcessRunner for TokioProcessRunner {
 
 async fn run_with_progress(
     mut command: Command,
+    phase: RipPhase,
     progress: mpsc::Sender<FfmpegProgress>,
+    logs: mpsc::Sender<FfmpegLogEvent>,
+    redactions: FfmpegLogRedactions,
     cancellation: CancellationSignal,
     grace_period: Duration,
 ) -> std::io::Result<ProcessExit> {
@@ -303,16 +353,12 @@ async fn run_with_progress(
         .stdout
         .take()
         .ok_or_else(|| std::io::Error::other("ffmpeg stdout was not captured"))?;
-    let mut stderr = child
+    let stderr = child
         .stderr
         .take()
         .ok_or_else(|| std::io::Error::other("ffmpeg stderr was not captured"))?;
 
-    let stderr_reader = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        stderr.read_to_end(&mut bytes).await?;
-        Ok::<_, std::io::Error>(bytes)
-    });
+    let stderr_reader = tokio::spawn(read_stderr(stderr, phase, logs, redactions));
 
     let stdout_reader = tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
@@ -369,6 +415,122 @@ async fn run_with_progress(
     }
 }
 
+async fn read_stderr(
+    mut stderr: tokio::process::ChildStderr,
+    phase: RipPhase,
+    logs: mpsc::Sender<FfmpegLogEvent>,
+    redactions: FfmpegLogRedactions,
+) -> std::io::Result<Vec<u8>> {
+    let mut tail = Vec::with_capacity(STDERR_TAIL_LIMIT);
+    let mut buffer = vec![0_u8; STDERR_READ_BUFFER];
+    let mut line = Vec::with_capacity(LOG_LINE_LIMIT);
+    let mut line_truncated = false;
+    let mut dropped = 0;
+    let mut logs_closed = false;
+
+    loop {
+        let bytes_read = stderr.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        append_tail(&mut tail, &buffer[..bytes_read]);
+        for byte in &buffer[..bytes_read] {
+            if *byte == b'\n' {
+                if logs_closed {
+                    line.clear();
+                } else {
+                    logs_closed = dispatch_log_line(
+                        &logs,
+                        phase,
+                        &redactions,
+                        std::mem::take(&mut line),
+                        line_truncated,
+                        &mut dropped,
+                    );
+                }
+                line_truncated = false;
+            } else if line.len() < LOG_LINE_LIMIT {
+                line.push(*byte);
+            } else {
+                line_truncated = true;
+            }
+        }
+    }
+
+    if !line.is_empty() && !logs_closed {
+        logs_closed = dispatch_log_line(
+            &logs,
+            phase,
+            &redactions,
+            line,
+            line_truncated,
+            &mut dropped,
+        );
+    }
+
+    if !logs_closed && dropped > 0 {
+        let _ = logs
+            .send(FfmpegLogEvent::omitted(SystemTime::now(), phase, dropped))
+            .await;
+    }
+
+    Ok(tail)
+}
+
+fn dispatch_log_line(
+    logs: &mpsc::Sender<FfmpegLogEvent>,
+    phase: RipPhase,
+    redactions: &FfmpegLogRedactions,
+    mut bytes: Vec<u8>,
+    truncated: bool,
+    dropped: &mut usize,
+) -> bool {
+    while bytes.last() == Some(&b'\r') {
+        bytes.pop();
+    }
+    if bytes.is_empty() {
+        return false;
+    }
+
+    if *dropped > 0 {
+        match logs.try_send(FfmpegLogEvent::omitted(SystemTime::now(), phase, *dropped)) {
+            Ok(()) => *dropped = 0,
+            Err(mpsc::error::TrySendError::Closed(_)) => return true,
+            Err(mpsc::error::TrySendError::Full(_)) => {}
+        }
+    }
+
+    let mut message = String::from_utf8_lossy(&bytes).into_owned();
+    if truncated {
+        message.push_str(" … [line truncated]");
+    }
+    let event = FfmpegLogEvent::line(SystemTime::now(), phase, redactions.apply(&message));
+    match logs.try_send(event) {
+        Ok(()) => false,
+        Err(mpsc::error::TrySendError::Closed(_)) => true,
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            *dropped = dropped.saturating_add(1);
+            false
+        }
+    }
+}
+
+fn append_tail(tail: &mut Vec<u8>, bytes: &[u8]) {
+    if bytes.len() >= STDERR_TAIL_LIMIT {
+        tail.clear();
+        tail.extend_from_slice(&bytes[bytes.len() - STDERR_TAIL_LIMIT..]);
+        return;
+    }
+    let overflow = tail
+        .len()
+        .saturating_add(bytes.len())
+        .saturating_sub(STDERR_TAIL_LIMIT);
+    if overflow > 0 {
+        tail.drain(..overflow);
+    }
+    tail.extend_from_slice(bytes);
+}
+
 /// Executes typed extraction requests using a separately supplied runner.
 #[derive(Debug, Default)]
 pub struct FfmpegAudioRipper<R = TokioProcessRunner> {
@@ -414,9 +576,10 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
     pub async fn rip(&self, request: &RipRequest) -> FFmpegResult<RipOutcome> {
         tracing::debug!("launching ffmpeg process");
         ensure_output_parent(&request.output).await?;
+        let redactions = FfmpegLogRedactions::for_request(request);
 
         let measurement = if request.options.normalize_audio {
-            Some(self.analyze(request).await?)
+            Some(self.analyze(request, &redactions).await?)
         } else {
             None
         };
@@ -434,10 +597,14 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
             "ffmpeg process exited"
         );
 
-        outcome(&output)
+        outcome(&output, &redactions)
     }
 
-    async fn analyze(&self, request: &RipRequest) -> FFmpegResult<LoudnessMeasurement> {
+    async fn analyze(
+        &self,
+        request: &RipRequest,
+        redactions: &FfmpegLogRedactions,
+    ) -> FFmpegResult<LoudnessMeasurement> {
         let output = self
             .runner
             .run(FfmpegCommandBuilder::build_loudness_analysis(request))
@@ -445,7 +612,7 @@ impl<R: ProcessRunner> FfmpegAudioRipper<R> {
         if !output.status.success() {
             return Err(FFmpegError::ProcessFailed {
                 status: output.status,
-                stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                stderr: redactions.apply(String::from_utf8_lossy(&output.stderr).trim()),
             });
         }
         LoudnessMeasurement::parse(&output.stderr)
@@ -486,9 +653,11 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         request: &RipRequest,
         progress: mpsc::Sender<RipProgressEvent>,
     ) -> FFmpegResult<RipOutcome> {
+        let (logs, receiver) = mpsc::channel(1);
+        drop(receiver);
         let (_handle, cancellation) = crate::ffmpeg::cancellation_pair();
         match self
-            .rip_with_progress_cancellable(request, progress, cancellation)
+            .rip_with_progress_cancellable(request, progress, logs, cancellation)
             .await?
         {
             RipTermination::Completed(outcome) => Ok(outcome),
@@ -533,16 +702,20 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         &self,
         request: &RipRequest,
         progress: mpsc::Sender<RipProgressEvent>,
+        logs: mpsc::Sender<FfmpegLogEvent>,
         cancellation: CancellationSignal,
     ) -> FFmpegResult<RipTermination> {
         tracing::debug!("launching ffmpeg process with progress reporting");
         ensure_output_parent(&request.output).await?;
+        let redactions = FfmpegLogRedactions::for_request(request);
         let measurement = if request.options.normalize_audio {
             let exit = self
                 .run_phase(
                     FfmpegCommandBuilder::build_loudness_analysis(request),
                     RipPhase::Analyzing,
                     progress.clone(),
+                    logs.clone(),
+                    redactions.clone(),
                     cancellation.clone(),
                 )
                 .await?;
@@ -551,7 +724,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
                     if !output.status.success() {
                         return Err(FFmpegError::ProcessFailed {
                             status: output.status,
-                            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                            stderr: redactions
+                                .apply(String::from_utf8_lossy(&output.stderr).trim()),
                         });
                     }
                     Some(LoudnessMeasurement::parse(&output.stderr)?)
@@ -568,6 +742,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
                 FfmpegCommandBuilder::build_rip_with_measurement(request, measurement.as_ref())?,
                 RipPhase::Encoding,
                 progress,
+                logs,
+                redactions.clone(),
                 cancellation,
             )
             .await?;
@@ -579,7 +755,7 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
                     stderr_bytes = output.stderr.len(),
                     "ffmpeg progress process exited"
                 );
-                outcome(&output).map(RipTermination::Completed)
+                outcome(&output, &redactions).map(RipTermination::Completed)
             }
             ProcessExit::Cancelled { output, forced } => {
                 tracing::info!(
@@ -598,26 +774,45 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         command: Command,
         phase: RipPhase,
         progress: mpsc::Sender<RipProgressEvent>,
+        logs: mpsc::Sender<FfmpegLogEvent>,
+        redactions: FfmpegLogRedactions,
         cancellation: CancellationSignal,
     ) -> FFmpegResult<ProcessExit> {
-        let (sender, mut receiver) = mpsc::channel(32);
-        let process = self.runner.run_with_progress(command, sender, cancellation);
+        let (progress_sender, mut progress_receiver) = mpsc::channel(32);
+        let (log_sender, mut log_receiver) = mpsc::channel(256);
+        let process = self.runner.run_with_progress(
+            command,
+            phase,
+            progress_sender,
+            log_sender,
+            redactions,
+            cancellation,
+        );
         tokio::pin!(process);
         let mut result = None;
-        let mut receiver_open = true;
+        let mut progress_open = true;
+        let mut logs_open = true;
 
-        while result.is_none() || receiver_open {
+        while result.is_none() || progress_open || logs_open {
             tokio::select! {
                 biased;
                 process_result = &mut process, if result.is_none() => {
                     result = Some(process_result?);
                 }
-                snapshot = receiver.recv(), if receiver_open => {
+                snapshot = progress_receiver.recv(), if progress_open => {
                     match snapshot {
                         Some(snapshot) => {
                             let _ = progress.send(RipProgressEvent { phase, progress: snapshot }).await;
                         }
-                        None => receiver_open = false,
+                        None => progress_open = false,
+                    }
+                }
+                log = log_receiver.recv(), if logs_open => {
+                    match log {
+                        Some(log) => {
+                            let _ = logs.try_send(log);
+                        }
+                        None => logs_open = false,
                     }
                 }
             }
@@ -637,11 +832,11 @@ async fn ensure_output_parent(path: &Path) -> std::io::Result<()> {
     tokio::fs::create_dir_all(parent).await
 }
 
-fn outcome(output: &Output) -> FFmpegResult<RipOutcome> {
+fn outcome(output: &Output, redactions: &FfmpegLogRedactions) -> FFmpegResult<RipOutcome> {
     if !output.status.success() {
         return Err(FFmpegError::ProcessFailed {
             status: output.status,
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            stderr: redactions.apply(String::from_utf8_lossy(&output.stderr).trim()),
         });
     }
 
@@ -908,6 +1103,78 @@ mod tests {
         );
     }
 
+    #[test]
+    fn log_redactions_prefer_longer_paths_and_keep_filenames() {
+        let request = RipRequest::new("/media/video", "/media/video.mp3");
+        let redactions = FfmpegLogRedactions::for_request(&request);
+
+        assert_eq!(
+            redactions.apply("Input /media/video -> /media/video.mp3"),
+            "Input <input>/video -> <output>/video.mp3"
+        );
+    }
+
+    #[test]
+    fn stderr_tail_is_bounded_to_the_latest_bytes() {
+        let mut tail = Vec::new();
+        append_tail(&mut tail, &vec![b'a'; STDERR_TAIL_LIMIT + 10]);
+        assert_eq!(tail.len(), STDERR_TAIL_LIMIT);
+        assert!(tail.iter().all(|byte| *byte == b'a'));
+
+        append_tail(&mut tail, b"tail");
+        assert_eq!(&tail[tail.len() - 4..], b"tail");
+        assert!(tail.len() <= STDERR_TAIL_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn stderr_reader_emits_lines_with_phase_and_redacts_paths() {
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("printf 'Input /media/video.mp4\\r\\nDuration: 00:01\\n' >&2");
+        command.stderr(Stdio::piped());
+        let mut child = command.spawn().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let (logs, mut receiver) = mpsc::channel(8);
+        let task = tokio::spawn(read_stderr(
+            stderr,
+            RipPhase::Encoding,
+            logs,
+            FfmpegLogRedactions {
+                replacements: vec![("/media/video.mp4".into(), "<input>/video.mp4".into())],
+            },
+        ));
+
+        child.wait().await.unwrap();
+        let tail = task.await.unwrap().unwrap();
+        let first = receiver.recv().await.unwrap();
+        let second = receiver.recv().await.unwrap();
+
+        assert_eq!(first.phase, RipPhase::Encoding);
+        assert_eq!(first.message, "Input <input>/video.mp4");
+        assert_eq!(second.message, "Duration: 00:01");
+        assert!(tail.starts_with(b"Input"));
+    }
+
+    #[test]
+    fn dispatch_log_line_handles_invalid_utf8_and_marks_truncation() {
+        let (logs, mut receiver) = mpsc::channel(4);
+        let redactions = FfmpegLogRedactions::default();
+        let mut dropped = 0;
+        assert!(!dispatch_log_line(
+            &logs,
+            RipPhase::Analyzing,
+            &redactions,
+            vec![0xff, b'!'],
+            true,
+            &mut dropped,
+        ));
+
+        let event = receiver.try_recv().unwrap();
+        assert!(event.message.contains('�'));
+        assert!(event.message.ends_with("[line truncated]"));
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn cancellation_stops_a_cooperative_child_without_forcing_it() {
@@ -915,10 +1182,14 @@ mod tests {
         command.arg("-c").arg("read line; test \"$line\" = q");
         let (handle, signal) = crate::ffmpeg::cancellation_pair();
         let (progress, _receiver) = mpsc::channel(1);
+        let (logs, _receiver) = mpsc::channel(1);
 
         let task = tokio::spawn(run_with_progress(
             command,
+            RipPhase::Encoding,
             progress,
+            logs,
+            FfmpegLogRedactions::default(),
             signal,
             Duration::from_secs(1),
         ));
@@ -938,10 +1209,14 @@ mod tests {
             .arg("trap '' TERM; while true; do :; done");
         let (handle, signal) = crate::ffmpeg::cancellation_pair();
         let (progress, _receiver) = mpsc::channel(1);
+        let (logs, _receiver) = mpsc::channel(1);
 
         let task = tokio::spawn(run_with_progress(
             command,
+            RipPhase::Encoding,
             progress,
+            logs,
+            FfmpegLogRedactions::default(),
             signal,
             Duration::from_millis(30),
         ));

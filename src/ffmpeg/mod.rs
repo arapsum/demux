@@ -12,8 +12,8 @@ pub use crate::model::encoding::{
 pub use self::{
     cancellation::{CancellationHandle, CancellationSignal, cancellation_pair},
     command::{
-        FfmpegAudioRipper, FfmpegCommandBuilder, ProcessExit, ProcessRunner, ProgressProcessRunner,
-        RipOutcome, RipRequest, RipTermination, TokioProcessRunner, rip,
+        FfmpegAudioRipper, FfmpegCommandBuilder, FfmpegLogRedactions, ProcessExit, ProcessRunner,
+        ProgressProcessRunner, RipOutcome, RipRequest, RipTermination, TokioProcessRunner, rip,
     },
     dependencies::{Dependencies, DependencyState, detect_dependencies},
     error::{DependencyError, FFmpegError, FFmpegResult},
@@ -21,5 +21,7 @@ pub use self::{
         FILTER_TRUE_PEAK, LRA_CEILING, LoudnessMeasurement, OUTPUT_TRUE_PEAK_LIMIT,
         TARGET_INTEGRATED_LUFS,
     },
-    progress::{FfmpegProgress, ProgressParser, ProgressStatus, RipPhase, RipProgressEvent},
+    progress::{
+        FfmpegLogEvent, FfmpegProgress, ProgressParser, ProgressStatus, RipPhase, RipProgressEvent,
+    },
 };

@@ -6,8 +6,8 @@ use crate::{
     Error, Result,
     app::{output, preferences},
     ffmpeg::{
-        self, CancellationSignal, Dependencies, FfmpegAudioRipper, RipProgressEvent, RipRequest,
-        RipTermination, TokioProcessRunner,
+        self, CancellationSignal, Dependencies, FfmpegAudioRipper, FfmpegLogEvent,
+        RipProgressEvent, RipRequest, RipTermination, TokioProcessRunner,
     },
     ffprobe,
     model::{encoding::RipOptions, job::JobId, media::MediaInfo, source::DestinationPolicy},
@@ -60,12 +60,13 @@ pub async fn rip_with_progress(
     job_id: JobId,
     request: RipRequest,
     progress: tokio::sync::mpsc::Sender<RipProgressEvent>,
+    logs: tokio::sync::mpsc::Sender<FfmpegLogEvent>,
     cancellation: CancellationSignal,
 ) -> Result<RipTermination> {
     let span = info_span!("audio_rip_progress_job", job_id = job_id.0);
     async move {
         let termination = FfmpegAudioRipper::<TokioProcessRunner>::default()
-            .rip_with_progress_cancellable(&request, progress, cancellation)
+            .rip_with_progress_cancellable(&request, progress, logs, cancellation)
             .await?;
 
         if matches!(termination, RipTermination::Cancelled { .. }) {

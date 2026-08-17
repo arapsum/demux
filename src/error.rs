@@ -26,6 +26,7 @@ use crate::{
 ///   be inspected while applying the collision policy.
 /// - [`PartialOutputCleanup`](Self::PartialOutputCleanup): A cancelled rip's
 ///   incomplete output could not be removed.
+/// - [`LogWrite`](Self::LogWrite): A retained `FFmpeg` log could not be saved.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Wraps a failure while detecting or running a required dependency.
@@ -56,6 +57,13 @@ pub enum Error {
     /// Adds the partial output path to a cancellation cleanup failure.
     #[error("ripping was cancelled, but partial output `{path}` could not be removed: {source}")]
     PartialOutputCleanup {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// Adds the destination path to a retained `FFmpeg` log write failure.
+    #[error("could not save FFmpeg log to `{path}`: {source}")]
+    LogWrite {
         path: PathBuf,
         #[source]
         source: std::io::Error,
