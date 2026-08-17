@@ -49,7 +49,10 @@ Demux is a cross-platform desktop utility used with local media files and locall
   queue jobs, with clear and native Save Log actions.
 - Retain at most 2,000 user-facing log lines or 512 KiB, redact parent paths
   while retaining filenames, and keep structured tracing independent.
-- Pause remains a later, platform-dependent milestone.
+- Pause and resume Unix FFmpeg process groups with explicit Pausing, Paused,
+  Resuming, and failure states; keep Cancel available throughout the transition.
+- Report an honest unsupported-capability explanation on non-Unix platforms
+  instead of exposing a control that cannot be guaranteed.
 
 ## Brand Commitments
 

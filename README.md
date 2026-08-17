@@ -6,8 +6,9 @@ Demux is a native Rust desktop utility for extracting audio from video files wit
 > selecting and probing multiple videos, then extracting every eligible job
 > sequentially with configurable MP3 settings, two-pass EBU R128 normalization,
 > folder-preserving destinations, live progress, estimates, and a bounded
-> exportable FFmpeg log. Safe queue cancellation is implemented; the complete
-> reference interface remains planned.
+> exportable FFmpeg log. Safe queue cancellation and Unix process-group
+> pause/resume are implemented; unsupported platforms keep Cancel available and
+> the complete reference interface remains planned.
 
 ## Product direction
 
@@ -54,7 +55,9 @@ source tags and compatible embedded cover art are preserved when their controls
 are enabled; absent or unsupported artwork remains non-fatal. Preserved folder
 imports retain safe paths relative to their selected root. Presets, parallel
 ripping, and advanced stream selection can follow once that pipeline is solid.
-Pause is also treated as a later, platform-dependent refinement.
+On Unix, pause and resume suspend a dedicated FFmpeg process group and report
+explicit acknowledgements; other platforms explain that only cancellation is
+available.
 
 ## Architecture
 

@@ -190,6 +190,13 @@
       "css": ".ds-btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: rgb(0.11, 0.085, 0.10); color: rgb(0.95, 0.76, 0.77); padding: 10px 16px; border: 1px solid rgb(0.36, 0.17, 0.20); border-radius: 12px; font: 500 14px system-ui, sans-serif; transition: background-color .15s ease, border-color .15s ease, color .15s ease; } .ds-btn-danger svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; } .ds-btn-danger:hover { background: rgb(0.18, 0.08, 0.095); border-color: rgb(0.60, 0.24, 0.27); color: rgb(1, 0.83, 0.84); } .ds-btn-danger:focus-visible { outline: 2px solid rgb(0.94, 0.39, 0.42); outline-offset: 2px; } .ds-btn-danger:active { background: rgb(0.22, 0.075, 0.09); border-color: rgb(0.94, 0.39, 0.42); color: white; } .ds-btn-danger:disabled { background: rgb(0.075, 0.08, 0.095); border-color: rgb(0.15, 0.16, 0.19); color: rgb(0.48, 0.50, 0.57); }"
     },
     {
+      "name": "Pause Control",
+      "kind": "button",
+      "description": "A capability-gated secondary action that acknowledges Pausing, Paused, and Resuming states while leaving Cancel available.",
+      "html": "<button class='ds-btn-secondary' aria-label='Pause extraction'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M8 5v14M16 5v14'/></svg>Pause</button>",
+      "css": ".ds-btn-secondary[data-control='pause'] { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: rgb(0.105, 0.112, 0.135); color: rgb(0.94, 0.95, 0.98); padding: 10px 14px; border: 1px solid rgb(0.24, 0.25, 0.30); border-radius: 12px; font: 500 13px system-ui, sans-serif; } .ds-btn-secondary[data-control='pause'] svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .ds-btn-secondary[data-control='pause']:hover, .ds-btn-secondary[data-control='pause']:focus-visible { border-color: rgb(0.43, 0.36, 0.96); background: rgb(0.14, 0.15, 0.18); } .ds-pause-status { color: rgb(0.96, 0.68, 0.30); font: 500 12px system-ui, sans-serif; } .ds-pause-unsupported { color: rgb(0.62, 0.64, 0.70); font: 400 11px system-ui, sans-serif; }"
+    },
+    {
       "name": "Path Field",
       "kind": "input",
       "refersTo": "input",
@@ -215,7 +222,7 @@
     {
       "name": "Queue Row",
       "kind": "custom",
-      "description": "Keeps file identity, duration, state, output settings, source size, and two-pass normalization state comparable at a glance.",
+      "description": "Keeps file identity, duration, state, output settings, and source size comparable at a glance; pause transitions remain text-labelled rather than color-only.",
       "html": "<div class='ds-queue-row'><span class='ds-queue-index'>1</span><strong>Example Video.mp4</strong><span>00:04:15</span><span class='ds-queue-status'>Probing</span><span>MP3 · 192 kbps</span><span>24.1 MB</span></div>",
       "css": ".ds-queue-row { display: grid; grid-template-columns: 34px minmax(180px, 7fr) 2fr 3fr 3fr 2fr; align-items: center; gap: 10px; min-height: 48px; padding: 10px 12px; color: rgb(0.92, 0.93, 0.96); border-bottom: 1px solid rgb(0.17, 0.18, 0.22); font: 400 12px system-ui, sans-serif; } .ds-queue-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px system-ui, sans-serif; } .ds-queue-index, .ds-queue-status { color: rgb(0.62, 0.64, 0.70); } .ds-queue-row:hover, .ds-queue-row[data-selected='true'] { background: rgb(0.105, 0.10, 0.16); } .ds-queue-row[data-selected='true'] { box-shadow: inset 2px 0 0 rgb(0.43, 0.36, 0.96); }"
     },
@@ -229,7 +236,7 @@
     {
       "name": "FFmpeg Log Surface",
       "kind": "custom",
-      "description": "Shows bounded, job-associated FFmpeg diagnostics with tail-follow, clear, and native export actions.",
+      "description": "Shows bounded, job-associated FFmpeg diagnostics with tail-follow, clear, native export actions, and pause/resume acknowledgements.",
       "html": "<section class='ds-log'><header><h2>FFmpeg Log</h2><button>Clear Log</button><button>Save Log…</button></header><pre>[12:34:10] [job 1] Input #0, mov,mp4…</pre></section>",
       "css": ".ds-log { display: grid; gap: 10px; min-height: 170px; padding: 14px 16px; background: rgb(0.085, 0.092, 0.112); color: rgb(0.92, 0.93, 0.96); border: 1px solid rgb(0.17, 0.18, 0.22); border-radius: 14px; } .ds-log pre { min-height: 120px; margin: 0; overflow: auto; padding: 12px; background: rgb(0.065, 0.07, 0.087); border: 1px solid rgb(0.19, 0.20, 0.24); border-radius: 12px; font: 400 12px ui-monospace, monospace; line-height: 1.45; }"
     }
@@ -241,7 +248,8 @@
       "Dense enough for operational work, with generous separation between tasks.",
       "Violet is reserved for primary action and active work.",
       "State is always expressed with words as well as color.",
-      "Advanced controls appear only when the engine supports them honestly."
+      "Advanced controls appear only when the engine supports them honestly.",
+      "Pause is a reversible process state; Cancel remains available while it is active."
     ],
     "rules": [
       {
@@ -254,6 +262,8 @@
       "Keep task state visible in plain language.",
       "Reserve the largest area for the queue and current media information.",
       "Disable controls while their changes could race an active process.",
+      "Show Pause and Resume only after the engine reports a supported capability.",
+      "Keep Cancel visible during Pausing, Paused, and Resuming states.",
       "Use native dialogs for local file and directory selection."
     ],
     "donts": [

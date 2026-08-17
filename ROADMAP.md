@@ -355,25 +355,41 @@ Purpose: make diagnostics visible without replacing structured tracing.
 Purpose: add the reference Pause control only where it can be implemented
 honestly and predictably.
 
+**Status: complete.** Demux now creates a dedicated process group for each
+FFmpeg phase on Unix targets and uses `SIGSTOP`/`SIGCONT` for pause and resume.
+The engine reports typed acknowledgements and failures, cancellation resumes a
+suspended process before sending the cooperative quit command, and forced
+shutdown terminates the full process group. Non-Unix targets report an explicit
+unsupported capability. The GUI exposes Pause/Resume only when the engine says
+it is supported, keeps Cancel available while paused, and records transitions
+in the queue, progress panel, toast, and bounded FFmpeg log.
+
 ### Engine first
 
-- Research and prototype process suspension on each supported platform.
-- Define supported-platform behavior and failure recovery.
-- Verify that suspended FFmpeg processes retain handles, output integrity, and
-  cancellation support.
-- Prefer an explicit unsupported capability over platform-specific behavior that
-  can strand processes.
+- Model pause capability, operations, acknowledgements, and request failures as
+  typed engine contracts.
+- Run each FFmpeg phase in its own Unix process group and suspend/resume that
+  group with `SIGSTOP`/`SIGCONT`.
+- Resume before cooperative cancellation, then fall back to bounded process-
+  group termination so a paused child cannot strand shutdown.
+- Keep non-Unix capability reporting explicit until a safe native implementation
+  and integration test exist for that platform.
 
 ### UI second
 
-- Add Pause/Resume only on platforms where the engine reports support.
-- Reflect pausing, paused, resuming, and failure states.
-- Keep Cancel available while paused.
-- Omit or disable the control with an explanation on unsupported platforms.
+- Add Pause/Resume only when the engine reports support for the active run.
+- Reflect Pausing, Paused, Resuming, and failed transitions in the queue and
+  progress surfaces.
+- Keep Cancel available during every pause transition and while paused.
+- Explain unsupported capability without rendering a misleading action.
 
 ### Exit criteria
 
-- Pause/resume integration tests pass on every platform where it is enabled.
+- The ignored FFmpeg integration test pauses a real extraction, verifies that it
+  stays alive while suspended, resumes it, and validates the resulting MP3 with
+  FFprobe on enabled Unix CI.
+- Unit tests cover bounded control requests, acknowledgement-driven GUI state,
+  stale events, and failed transitions.
 - Application shutdown and cancellation remain reliable from the paused state.
 
 ## Milestone 10 — Complete shell and visual parity
