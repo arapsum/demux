@@ -15,7 +15,7 @@ path = "src/lib.rs"
 [dependencies]
 # Iced 0.14 does not emit desktop file-drop events on Wayland. Keep Linux on
 # X11/XWayland until upstream implements them so Demux's intake contract works.
-iced = { version = "0.14.0", default-features = false, features = ["advanced", "canvas", "crisp", "linux-theme-detection", "thread-pool", "tiny-skia", "tokio", "web-colors", "wgpu", "x11"] }
+iced = { version = "0.14.0", default-features = false, features = ["advanced", "canvas", "crisp", "linux-theme-detection", "svg", "thread-pool", "tiny-skia", "tokio", "web-colors", "wgpu", "x11"] }
 lucide-icons = { version = "1.31.0", features = ["iced"] }
 # Demux runs Iced through X11 on Linux. The portal backend provides native
 # pickers without pulling rfd's unused system-linked Wayland client.

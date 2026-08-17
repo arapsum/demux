@@ -1,44 +1,27 @@
 use iced::{
-    Color, Element, Fill, FillPortion, Font, Padding,
-    font::Weight,
-    widget::{column, container, row, text},
+    Element, Fill, FillPortion, Length, Padding,
+    widget::{column, container, row, svg, text},
 };
 
 use super::{
     message::Message,
     state::Demux,
-    style::{TEXT_MUTED, accent_tile, app_background},
+    style::{TEXT_MUTED, app_background},
 };
 
 impl Demux {
     pub fn view(&self) -> Element<'_, Message> {
-        let header = row![
-            container(
-                text("D")
-                    .size(22)
-                    .font(Font {
-                        weight: Weight::Bold,
-                        ..Font::default()
-                    })
-                    .color(Color::WHITE)
-            )
-            .width(48)
-            .height(48)
-            .center(48)
-            .style(accent_tile),
-            column![
-                text("Demux").size(28).font(Font {
-                    weight: Weight::Bold,
-                    ..Font::default()
-                }),
-                text("Extract clean audio from video with FFmpeg")
-                    .size(14)
-                    .color(TEXT_MUTED),
-            ]
-            .spacing(3)
+        let header = column![
+            svg(svg::Handle::from_memory(include_bytes!(
+                "../../assets/demux-logo.svg"
+            )))
+            .width(Length::Fixed(280.0))
+            .height(Length::Fixed(73.0)),
+            text("Extract clean audio from video with FFmpeg")
+                .size(14)
+                .color(TEXT_MUTED),
         ]
-        .spacing(14)
-        .align_y(iced::Alignment::Center);
+        .spacing(2);
 
         let work_area = column![
             self.queue.view(self.error.as_deref()).map(Message::Queue),

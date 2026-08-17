@@ -57,16 +57,6 @@ pub fn queue_footer(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.075, 0.08, 0.098))
 }
 
-pub fn accent_tile(_theme: &Theme) -> container::Style {
-    container::Style::default()
-        .background(Color::from_rgb(0.20, 0.17, 0.43))
-        .border(Border {
-            color: Color::from_rgb(0.34, 0.29, 0.67),
-            width: 1.0,
-            radius: 12.0.into(),
-        })
-}
-
 pub fn error_panel(_theme: &Theme) -> container::Style {
     container::Style::default()
         .background(Color::from_rgb(0.16, 0.075, 0.085))
