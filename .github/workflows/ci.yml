@@ -42,3 +42,6 @@ jobs:
 
       - name: Test FFmpeg normalization
         run: cargo test --test ffmpeg_normalization -- --ignored
+
+      - name: Test FFmpeg pause and resume
+        run: cargo test --test ffmpeg_pause -- --ignored
