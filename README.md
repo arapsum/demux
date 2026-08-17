@@ -13,8 +13,8 @@ video files. It makes the FFmpeg workflow visible and approachable: add media,
 inspect what was found, choose how and where to save the audio, then follow the
 queue through completion, failure, cancellation, or pause.
 
-> **Status:** active development. The core multi-file extraction workflow is
-> functional; final shell polish, packaging, and platform-specific distribution
+> **Status:** active development. The complete extraction shell and multi-file
+> workflow are functional; packaging and platform-specific distribution
 > guidance remain.
 
 ## Current capabilities
@@ -39,6 +39,11 @@ queue through completion, failure, cancellation, or pause.
 - Cancel the entire queue safely, including partial-output cleanup. Unix builds
   also support pause and resume through a dedicated FFmpeg process group;
   unsupported platforms report that limitation explicitly.
+- Open Settings for dependency rechecks, saved-default reset, window geometry
+  retention, and shortcut guidance; About links the project, FFmpeg, and the
+  GPL-3.0-only license.
+- Use the compact responsive layout at narrower window widths, with Start
+  Ripping anchored in Progress and dialogs protecting active work on close.
 
 Supported intake extensions are MP4, MKV, MOV, AVI, WMV, FLV, MPEG, and MPG.
 Whether a file can be extracted still depends on the codecs available to the
@@ -126,6 +131,10 @@ Demux
   ├── Progress         → active extraction measurements and controls
   ├── Logs             → bounded FFmpeg output, retention, and export
   ├── OutputSettings   → encoding and destination choices
+  ├── ApplicationSettings → preferences, dependencies, and shortcuts
+  ├── About            → product identity and external links
+  ├── CloseConfirmation → safe shutdown while extraction is active
+  ├── WindowState      → persisted geometry and responsive layout state
   └── Notifications    → transient completion and failure feedback
 ```
 
@@ -135,11 +144,10 @@ them into persistent job state or user-facing messages only at its boundary.
 
 ## Roadmap
 
-Milestones 0–9 are complete: GUI composition, intake, sequential execution,
+Milestones 0–10 are complete: GUI composition, intake, sequential execution,
 live progress, cancellation, configurable MP3 output, metadata/artwork,
-normalization and folder structure, FFmpeg logs, and Unix pause/resume.
-Milestone 10 focuses on the complete shell, accessibility, settings and about
-surfaces, and visual parity with the supplied reference.
+normalization and folder structure, FFmpeg logs, Unix pause/resume, and the
+complete responsive shell with preferences, dialogs, shortcuts, and safe close.
 
 See [ROADMAP.md](ROADMAP.md) for the engine-first milestone plan and its exit
 criteria.

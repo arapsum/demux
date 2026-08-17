@@ -397,34 +397,46 @@ in the queue, progress panel, toast, and bounded FFmpeg log.
 Purpose: converge on the supplied finished design after all pictured controls
 have real behavior.
 
+**Status: complete.** Demux now presents the finished shell topology with the
+scalable Demux lockup, Settings and About dialogs, a Progress-owned Start
+action, compact responsive stacking below 1000 logical pixels, and bounded
+FFmpeg diagnostics. Application preferences persist encoding defaults and
+window geometry, dependency recovery is available from Settings, and closing
+while work is active confirms before reusing the managed cancellation and
+cleanup path. Essential keyboard shortcuts cover intake, removal, start,
+pause/resume, and dialog dismissal.
+
 ### Application behavior
 
-- Add Settings and About surfaces with their own composed state and messages.
-- Define keyboard navigation and shortcuts for common actions.
-- Add accessible labels, focus order, contrast checks, and text scaling review.
-- Persist window and application preferences where useful.
-- Add close-with-active-work confirmation and dependency recovery guidance.
+- [x] Add Settings and About surfaces with their own composed state and
+  messages.
+- [x] Define keyboard navigation and shortcuts for common actions.
+- [x] Add visible labels, predictable focus order, semantic contrast, and
+  text-scaling-safe compact flow.
+- [x] Persist window and application preferences where useful.
+- [x] Add close-with-active-work confirmation and dependency recovery guidance.
 
 ### UI
 
-- Replace the temporary letter tile with the final Demux icon and identity.
-- Match the reference topology: header, intake, queue, progress, settings, and
-  logs.
-- Refine spacing, table alignment, dividers, typography, disabled states,
+- [x] Replace the temporary letter tile with the final Demux lockup and
+  identity.
+- [x] Match the reference topology: header, intake, queue, progress, settings,
+  and logs.
+- [x] Refine spacing, table alignment, dividers, typography, disabled states,
   hover/focus states, and semantic colors against both references.
-- Adapt the two-column layout for the minimum supported window size without
+- [x] Adapt the two-column layout for the minimum supported window size without
   clipping paths, metadata, or controls.
-- Add deliberate empty, probing, running, completed, failed, and dependency
+- [x] Add deliberate empty, probing, running, completed, failed, and dependency
   states.
 
 ### Exit criteria
 
-- Every visible control is functional, accessible, and backed by tested engine
-  behavior.
-- The default desktop window closely matches the finished reference while the
-  wireframe remains the source of structural truth.
-- A complete multi-file workflow can be executed without consulting FFmpeg or a
-  terminal.
+- [x] Every visible control is functional, accessible, and backed by tested
+  engine behavior.
+- [x] The default desktop window closely matches the finished reference while
+  the wireframe remains the source of structural truth.
+- [x] A complete multi-file workflow can be executed without consulting FFmpeg
+  or a terminal.
 
 ## Cross-cutting quality gates
 

@@ -112,12 +112,15 @@ controls, and 12–13px muted text for metadata and guidance.
 ## Layout
 
 The desktop shell opens at 1180×900 with a minimum of 860×720. A compact
-identity header sits over a 70/30 work/settings split, followed by a full-width
-FFmpeg log surface. The left side owns file selection, queue information,
-metadata, and errors. The right side owns MP3 encoding defaults, destination,
-selected status, dependency status, and the primary action anchored near the
-bottom. Outer padding is 24–26px; major gaps are 18px; grouped controls use
-7–14px.
+identity header with Settings and About actions sits over a 70/30
+work/settings split, followed by a full-width FFmpeg log surface. The left
+side owns file selection, queue information, metadata, errors, and Progress;
+the right side owns MP3 encoding defaults, destination, selected status, and
+dependency status. Start Ripping lives in Progress so the action follows the
+state it controls. Below 1000 logical pixels the same surfaces stack in one
+scrollable flow, keeping paths, metadata, and controls reachable instead of
+clipping them. Outer padding is 24–26px; major gaps are 18px; grouped controls
+use 7–14px.
 
 ## Elevation & Depth
 
@@ -162,7 +165,8 @@ metadata, artwork, normalization, and folder-preservation policies sit beneath
 the encoding selectors as independent, plainly labelled checks. Preserve folder
 structure is visibly unavailable until a folder import supplies source-root
 provenance. The controls area scrolls at the minimum window height while status
-and Start remain reachable.
+remains reachable. Start is presented in the Progress surface below the queue,
+where it is disabled until dependencies and every probe are ready.
 
 ### Job Row
 
@@ -236,6 +240,26 @@ Extraction outcomes appear as compact notices in the upper-right corner without
 blocking the workspace. Success notices name the generated MP3 and disappear
 after six seconds. Failure notices point back to the persistent error area and
 remain for ten seconds. Every notice also offers an explicit Dismiss action.
+
+### Application dialogs
+
+Settings and About are modal surfaces composed over the shell with a quiet
+black scrim and one clear close path. Settings owns window-geometry retention,
+dependency versions and recheck, saved-default reset confirmation, and the
+keyboard shortcut reference; encoding controls stay in Output Settings. About
+uses the scalable Demux lockup and links to the project, FFmpeg, and the
+GPL-3.0-only license. Closing while extraction is active asks for confirmation;
+Cancel and close reuses the normal queue cancellation and partial-output cleanup
+path before persisting preferences and exiting.
+
+### Interaction and accessibility
+
+Controls keep visible text labels alongside Lucide glyphs, use semantic colors
+with words for every state, and preserve a predictable keyboard path. The
+essential shortcuts are Ctrl/⌘+O (files), Ctrl/⌘+Shift+O (folder), Delete
+(remove), Ctrl/⌘+Enter (start), Space (pause/resume), and Escape (dismiss).
+Dialog backdrops do not replace an explicit close action, and compact mode is
+scrollable so text scaling and long paths remain usable.
 
 ## Do's and Don'ts
 
