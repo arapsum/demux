@@ -1,5 +1,6 @@
 mod cancellation;
 mod command;
+mod control;
 mod dependencies;
 mod error;
 mod normalization;
@@ -14,6 +15,10 @@ pub use self::{
     command::{
         FfmpegAudioRipper, FfmpegCommandBuilder, FfmpegLogRedactions, ProcessExit, ProcessRunner,
         ProgressProcessRunner, RipOutcome, RipRequest, RipTermination, TokioProcessRunner, rip,
+    },
+    control::{
+        PauseCapability, PauseControlEvent, PauseControlHandle, PauseControlOperation,
+        PauseControlRequestError, PauseControlSignal, pause_control_pair,
     },
     dependencies::{Dependencies, DependencyState, detect_dependencies},
     error::{DependencyError, FFmpegError, FFmpegResult},

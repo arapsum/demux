@@ -12,8 +12,8 @@ use tokio::sync::mpsc;
 
 use crate::ffmpeg::{
     CancellationSignal, FFmpegError, FFmpegResult, FILTER_TRUE_PEAK, FfmpegLogEvent,
-    FfmpegProgress, LRA_CEILING, LoudnessMeasurement, ProgressParser, RipPhase, RipProgressEvent,
-    TARGET_INTEGRATED_LUFS,
+    FfmpegProgress, LRA_CEILING, LoudnessMeasurement, PauseControlEvent, PauseControlOperation,
+    PauseControlSignal, ProgressParser, RipPhase, RipProgressEvent, TARGET_INTEGRATED_LUFS,
 };
 use crate::model::{encoding::RipOptions, media::MediaInfo};
 
@@ -287,6 +287,29 @@ pub trait ProcessRunner: Sync {
 
 /// Runs `FFmpeg` while forwarding machine-readable progress snapshots.
 pub trait ProgressProcessRunner: Sync {
+    /// Runs one `FFmpeg` phase with progress, diagnostics, cancellation, and
+    /// capability-gated pause/resume control.
+    ///
+    /// # Parameters
+    ///
+    /// - `command`: Prepared argument-based `FFmpeg` command.
+    /// - `phase`: Analysis or encoding phase represented by emitted events.
+    /// - `progress`: Channel receiving parsed progress snapshots.
+    /// - `logs`: Channel receiving bounded diagnostic events.
+    /// - `redactions`: Path redactions applied to diagnostic output.
+    /// - `cancellation`: Signal used to stop the child process.
+    /// - `pause_control`: Receiver for pause and resume requests.
+    /// - `control_events`: Channel receiving transition acknowledgements.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the child process exit state.
+    ///
+    /// # Errors
+    ///
+    /// The returned future can fail when the process cannot be spawned, its
+    /// output cannot be read, or forced shutdown cannot complete.
+    #[allow(clippy::too_many_arguments)]
     fn run_with_progress<'a>(
         &'a self,
         command: Command,
@@ -295,6 +318,8 @@ pub trait ProgressProcessRunner: Sync {
         logs: mpsc::Sender<FfmpegLogEvent>,
         redactions: FfmpegLogRedactions,
         cancellation: CancellationSignal,
+        pause_control: &'a mut PauseControlSignal,
+        control_events: mpsc::Sender<PauseControlEvent>,
     ) -> Pin<Box<dyn Future<Output = std::io::Result<ProcessExit>> + Send + 'a>>;
 }
 
@@ -312,6 +337,7 @@ impl ProcessRunner for TokioProcessRunner {
 }
 
 impl ProgressProcessRunner for TokioProcessRunner {
+    #[allow(clippy::too_many_arguments)]
     fn run_with_progress<'a>(
         &'a self,
         command: Command,
@@ -320,6 +346,8 @@ impl ProgressProcessRunner for TokioProcessRunner {
         logs: mpsc::Sender<FfmpegLogEvent>,
         redactions: FfmpegLogRedactions,
         cancellation: CancellationSignal,
+        pause_control: &'a mut PauseControlSignal,
+        control_events: mpsc::Sender<PauseControlEvent>,
     ) -> Pin<Box<dyn Future<Output = std::io::Result<ProcessExit>> + Send + 'a>> {
         Box::pin(run_with_progress(
             command,
@@ -328,11 +356,14 @@ impl ProgressProcessRunner for TokioProcessRunner {
             logs,
             redactions,
             cancellation,
+            pause_control,
+            control_events,
             CANCELLATION_GRACE_PERIOD,
         ))
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn run_with_progress(
     mut command: Command,
     phase: RipPhase,
@@ -340,6 +371,8 @@ async fn run_with_progress(
     logs: mpsc::Sender<FfmpegLogEvent>,
     redactions: FfmpegLogRedactions,
     cancellation: CancellationSignal,
+    pause_control: &mut PauseControlSignal,
+    control_events: mpsc::Sender<PauseControlEvent>,
     grace_period: Duration,
 ) -> std::io::Result<ProcessExit> {
     command
@@ -347,7 +380,11 @@ async fn run_with_progress(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+
     let mut child = command.spawn()?;
+    let child_id = child.id();
     let mut stdin = child.stdin.take();
     let stdout = child
         .stdout
@@ -371,28 +408,97 @@ async fn run_with_progress(
         Ok::<_, std::io::Error>(())
     });
 
-    let process_state = tokio::select! {
-        biased;
-        status = child.wait() => (status?, false, false),
-        () = cancellation.cancelled() => {
-            tracing::info!("requesting cooperative ffmpeg cancellation");
-            if let Some(mut stdin) = stdin.take() {
-                if let Err(error) = stdin.write_all(b"q\n").await {
-                    tracing::debug!(%error, "could not send ffmpeg's cooperative quit command");
-                } else if let Err(error) = stdin.flush().await {
-                    tracing::debug!(%error, "could not flush ffmpeg's cooperative quit command");
+    let mut control_open = pause_control.capability().is_supported();
+    let mut paused = false;
+    let process_state = loop {
+        tokio::select! {
+            biased;
+            status = child.wait() => break (status?, false, false),
+            () = cancellation.cancelled() => {
+                if paused
+                    && let Some(child_id) = child_id
+                    && let Err(error) = signal_process_group(child_id, PauseControlOperation::Resume)
+                {
+                    tracing::debug!(%error, "could not resume ffmpeg before cancellation");
                 }
-            }
+                tracing::info!("requesting cooperative ffmpeg cancellation");
+                if let Some(mut stdin) = stdin.take() {
+                    if let Err(error) = stdin.write_all(b"q\n").await {
+                        tracing::debug!(%error, "could not send ffmpeg's cooperative quit command");
+                    } else if let Err(error) = stdin.flush().await {
+                        tracing::debug!(%error, "could not flush ffmpeg's cooperative quit command");
+                    }
+                }
 
-            if let Ok(status) = tokio::time::timeout(grace_period, child.wait()).await {
-                (status?, true, false)
-            } else {
+                if let Ok(status) = tokio::time::timeout(grace_period, child.wait()).await {
+                    break (status?, true, false);
+                }
+
                 tracing::warn!(
                     grace_period_ms = grace_period.as_millis(),
                     "ffmpeg did not stop cooperatively; forcing termination"
                 );
+                #[cfg(unix)]
+                if let Some(child_id) = child_id {
+                    if let Err(error) = kill_process_group(child_id) {
+                        tracing::debug!(%error, "could not terminate the full ffmpeg process group");
+                        child.kill().await?;
+                    }
+                } else {
+                    child.kill().await?;
+                }
+                #[cfg(not(unix))]
                 child.kill().await?;
-                (child.wait().await?, true, true)
+                break (child.wait().await?, true, true);
+            }
+            operation = pause_control.recv(), if control_open => {
+                let Some(operation) = operation else {
+                    control_open = false;
+                    continue;
+                };
+                let should_apply = match operation {
+                    PauseControlOperation::Pause => !paused,
+                    PauseControlOperation::Resume => paused,
+                };
+                if !should_apply {
+                    continue;
+                }
+                let Some(child_id) = child_id else {
+                    send_control_event(
+                        &control_events,
+                        PauseControlEvent::Failed {
+                            operation,
+                            phase,
+                            message: "FFmpeg did not expose a process identifier".to_owned(),
+                        },
+                    )
+                    .await;
+                    continue;
+                };
+                match signal_process_group(child_id, operation) {
+                    Ok(()) => {
+                        paused = operation == PauseControlOperation::Pause;
+                        send_control_event(
+                            &control_events,
+                            match operation {
+                                PauseControlOperation::Pause => PauseControlEvent::Paused { phase },
+                                PauseControlOperation::Resume => PauseControlEvent::Resumed { phase },
+                            },
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        send_control_event(
+                            &control_events,
+                            PauseControlEvent::Failed {
+                                operation,
+                                phase,
+                                message: error.to_string(),
+                            },
+                        )
+                        .await;
+                    }
+                }
             }
         }
     };
@@ -412,6 +518,64 @@ async fn run_with_progress(
         })
     } else {
         Ok(ProcessExit::Exited(output))
+    }
+}
+
+async fn send_control_event(sender: &mpsc::Sender<PauseControlEvent>, event: PauseControlEvent) {
+    if sender.send(event).await.is_err() {
+        tracing::debug!("pause-control consumer closed before receiving an event");
+    }
+}
+
+fn signal_process_group(child_id: u32, operation: PauseControlOperation) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let process_group = i32::try_from(child_id).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "FFmpeg process identifier does not fit the platform process-group type",
+            )
+        })?;
+        let signal = match operation {
+            PauseControlOperation::Pause => libc::SIGSTOP,
+            PauseControlOperation::Resume => libc::SIGCONT,
+        };
+        // SAFETY: The process group was created for this child immediately
+        // before spawning FFmpeg, and the signal is one of the two constants
+        // selected above.
+        let result = unsafe { libc::kill(-process_group, signal) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (child_id, operation);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "process suspension is unsupported on this platform",
+        ))
+    }
+}
+
+#[cfg(unix)]
+fn kill_process_group(child_id: u32) -> std::io::Result<()> {
+    let process_group = i32::try_from(child_id).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "FFmpeg process identifier does not fit the platform process-group type",
+        )
+    })?;
+    // SAFETY: The process group was created for this child immediately before
+    // spawning FFmpeg, and SIGKILL is a valid process signal.
+    let result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 
@@ -656,8 +820,19 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         let (logs, receiver) = mpsc::channel(1);
         drop(receiver);
         let (_handle, cancellation) = crate::ffmpeg::cancellation_pair();
+        let (_pause_handle, pause_control) =
+            crate::ffmpeg::pause_control_pair(crate::ffmpeg::PauseCapability::current());
+        let (control_events, receiver) = mpsc::channel(1);
+        drop(receiver);
         match self
-            .rip_with_progress_cancellable(request, progress, logs, cancellation)
+            .rip_with_progress_cancellable(
+                request,
+                progress,
+                logs,
+                cancellation,
+                pause_control,
+                control_events,
+            )
             .await?
         {
             RipTermination::Completed(outcome) => Ok(outcome),
@@ -689,6 +864,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
     /// - `request`: Input, output, metadata, and encoding options.
     /// - `progress`: Channel receiving machine-readable progress events.
     /// - `cancellation`: Signal used to stop both normalization and encoding.
+    /// - `pause_control`: Signal receiving pause and resume requests.
+    /// - `control_events`: Channel receiving pause and resume acknowledgements.
     ///
     /// # Returns
     ///
@@ -704,6 +881,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         progress: mpsc::Sender<RipProgressEvent>,
         logs: mpsc::Sender<FfmpegLogEvent>,
         cancellation: CancellationSignal,
+        mut pause_control: PauseControlSignal,
+        control_events: mpsc::Sender<PauseControlEvent>,
     ) -> FFmpegResult<RipTermination> {
         tracing::debug!("launching ffmpeg process with progress reporting");
         ensure_output_parent(&request.output).await?;
@@ -717,6 +896,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
                     logs.clone(),
                     redactions.clone(),
                     cancellation.clone(),
+                    &mut pause_control,
+                    control_events.clone(),
                 )
                 .await?;
             match exit {
@@ -745,6 +926,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
                 logs,
                 redactions.clone(),
                 cancellation,
+                &mut pause_control,
+                control_events,
             )
             .await?;
 
@@ -769,6 +952,7 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_phase(
         &self,
         command: Command,
@@ -777,6 +961,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
         logs: mpsc::Sender<FfmpegLogEvent>,
         redactions: FfmpegLogRedactions,
         cancellation: CancellationSignal,
+        pause_control: &mut PauseControlSignal,
+        control_events: mpsc::Sender<PauseControlEvent>,
     ) -> FFmpegResult<ProcessExit> {
         let (progress_sender, mut progress_receiver) = mpsc::channel(32);
         let (log_sender, mut log_receiver) = mpsc::channel(256);
@@ -787,6 +973,8 @@ impl<R: ProgressProcessRunner> FfmpegAudioRipper<R> {
             log_sender,
             redactions,
             cancellation,
+            pause_control,
+            control_events,
         );
         tokio::pin!(process);
         let mut result = None;
@@ -1183,16 +1371,24 @@ mod tests {
         let (handle, signal) = crate::ffmpeg::cancellation_pair();
         let (progress, _receiver) = mpsc::channel(1);
         let (logs, _receiver) = mpsc::channel(1);
+        let (_pause_handle, mut pause_control) =
+            crate::ffmpeg::pause_control_pair(crate::ffmpeg::PauseCapability::Supported);
+        let (control_events, _receiver) = mpsc::channel(1);
 
-        let task = tokio::spawn(run_with_progress(
-            command,
-            RipPhase::Encoding,
-            progress,
-            logs,
-            FfmpegLogRedactions::default(),
-            signal,
-            Duration::from_secs(1),
-        ));
+        let task = tokio::spawn(async move {
+            run_with_progress(
+                command,
+                RipPhase::Encoding,
+                progress,
+                logs,
+                FfmpegLogRedactions::default(),
+                signal,
+                &mut pause_control,
+                control_events,
+                Duration::from_secs(1),
+            )
+            .await
+        });
         tokio::task::yield_now().await;
         assert!(handle.cancel());
 
@@ -1210,16 +1406,24 @@ mod tests {
         let (handle, signal) = crate::ffmpeg::cancellation_pair();
         let (progress, _receiver) = mpsc::channel(1);
         let (logs, _receiver) = mpsc::channel(1);
+        let (_pause_handle, mut pause_control) =
+            crate::ffmpeg::pause_control_pair(crate::ffmpeg::PauseCapability::Supported);
+        let (control_events, _receiver) = mpsc::channel(1);
 
-        let task = tokio::spawn(run_with_progress(
-            command,
-            RipPhase::Encoding,
-            progress,
-            logs,
-            FfmpegLogRedactions::default(),
-            signal,
-            Duration::from_millis(30),
-        ));
+        let task = tokio::spawn(async move {
+            run_with_progress(
+                command,
+                RipPhase::Encoding,
+                progress,
+                logs,
+                FfmpegLogRedactions::default(),
+                signal,
+                &mut pause_control,
+                control_events,
+                Duration::from_millis(30),
+            )
+            .await
+        });
         tokio::task::yield_now().await;
         assert!(handle.cancel());
 
@@ -1229,5 +1433,114 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(matches!(exit, ProcessExit::Cancelled { forced: true, .. }));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pause_resume_and_cancellation_preserve_a_live_process_handle() {
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("while read line; do test \"$line\" = q && exit 0; done");
+        let (cancel_handle, cancellation) = crate::ffmpeg::cancellation_pair();
+        let (pause_handle, mut pause_control) =
+            crate::ffmpeg::pause_control_pair(crate::ffmpeg::PauseCapability::Supported);
+        let (control_events, mut control_receiver) = mpsc::channel(8);
+        let (progress, _progress_receiver) = mpsc::channel(1);
+        let (logs, _logs_receiver) = mpsc::channel(1);
+
+        let mut task = tokio::spawn(async move {
+            run_with_progress(
+                command,
+                RipPhase::Encoding,
+                progress,
+                logs,
+                FfmpegLogRedactions::default(),
+                cancellation,
+                &mut pause_control,
+                control_events,
+                Duration::from_secs(1),
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+
+        pause_handle
+            .request(crate::ffmpeg::PauseControlOperation::Pause)
+            .unwrap();
+        assert_eq!(
+            control_receiver.recv().await,
+            Some(crate::ffmpeg::PauseControlEvent::Paused {
+                phase: RipPhase::Encoding,
+            })
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut task)
+                .await
+                .is_err()
+        );
+
+        pause_handle
+            .request(crate::ffmpeg::PauseControlOperation::Resume)
+            .unwrap();
+        assert_eq!(
+            control_receiver.recv().await,
+            Some(crate::ffmpeg::PauseControlEvent::Resumed {
+                phase: RipPhase::Encoding,
+            })
+        );
+
+        assert!(cancel_handle.cancel());
+        let exit = task.await.unwrap().unwrap();
+        assert!(matches!(exit, ProcessExit::Cancelled { forced: false, .. }));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_while_paused_resumes_before_quitting() {
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("while read line; do test \"$line\" = q && exit 0; done");
+        let (cancel_handle, cancellation) = crate::ffmpeg::cancellation_pair();
+        let (pause_handle, mut pause_control) =
+            crate::ffmpeg::pause_control_pair(crate::ffmpeg::PauseCapability::Supported);
+        let (control_events, mut control_receiver) = mpsc::channel(8);
+        let (progress, _progress_receiver) = mpsc::channel(1);
+        let (logs, _logs_receiver) = mpsc::channel(1);
+
+        let task = tokio::spawn(async move {
+            run_with_progress(
+                command,
+                RipPhase::Encoding,
+                progress,
+                logs,
+                FfmpegLogRedactions::default(),
+                cancellation,
+                &mut pause_control,
+                control_events,
+                Duration::from_secs(1),
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+
+        pause_handle
+            .request(crate::ffmpeg::PauseControlOperation::Pause)
+            .unwrap();
+        assert_eq!(
+            control_receiver.recv().await,
+            Some(crate::ffmpeg::PauseControlEvent::Paused {
+                phase: RipPhase::Encoding,
+            })
+        );
+        assert!(cancel_handle.cancel());
+
+        let exit = tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("cancellation from a paused process should be bounded")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(exit, ProcessExit::Cancelled { forced: false, .. }));
     }
 }

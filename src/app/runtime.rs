@@ -7,7 +7,8 @@ use crate::{
     app::{output, preferences},
     ffmpeg::{
         self, CancellationSignal, Dependencies, FfmpegAudioRipper, FfmpegLogEvent,
-        RipProgressEvent, RipRequest, RipTermination, TokioProcessRunner,
+        PauseControlEvent, PauseControlSignal, RipProgressEvent, RipRequest, RipTermination,
+        TokioProcessRunner,
     },
     ffprobe,
     model::{encoding::RipOptions, job::JobId, media::MediaInfo, source::DestinationPolicy},
@@ -56,17 +57,45 @@ pub async fn probe(job_id: JobId, input: PathBuf) -> Result<MediaInfo> {
 }
 
 /// Extracts one audio file and forwards bounded machine-readable progress.
+///
+/// # Parameters
+///
+/// - `job_id`: Queue identifier used for tracing and event correlation.
+/// - `request`: Immutable input, output, and encoding policy snapshot.
+/// - `progress`: Channel receiving machine-readable progress events.
+/// - `logs`: Channel receiving bounded user-facing `FFmpeg` diagnostics.
+/// - `cancellation`: Signal used to stop the active phase and clean up output.
+/// - `pause_control`: Signal receiving pause and resume requests.
+/// - `control_events`: Channel receiving pause and resume acknowledgements.
+///
+/// # Returns
+///
+/// A completed or cancelled process termination.
+///
+/// # Errors
+///
+/// Returns an error when process setup, `FFmpeg` execution, or cancelled-output
+/// cleanup fails.
 pub async fn rip_with_progress(
     job_id: JobId,
     request: RipRequest,
     progress: tokio::sync::mpsc::Sender<RipProgressEvent>,
     logs: tokio::sync::mpsc::Sender<FfmpegLogEvent>,
     cancellation: CancellationSignal,
+    pause_control: PauseControlSignal,
+    control_events: tokio::sync::mpsc::Sender<PauseControlEvent>,
 ) -> Result<RipTermination> {
     let span = info_span!("audio_rip_progress_job", job_id = job_id.0);
     async move {
         let termination = FfmpegAudioRipper::<TokioProcessRunner>::default()
-            .rip_with_progress_cancellable(&request, progress, logs, cancellation)
+            .rip_with_progress_cancellable(
+                &request,
+                progress,
+                logs,
+                cancellation,
+                pause_control,
+                control_events,
+            )
             .await?;
 
         if matches!(termination, RipTermination::Cancelled { .. }) {

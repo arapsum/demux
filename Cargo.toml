@@ -27,3 +27,6 @@ time = { version = "0.3.41", features = ["formatting", "local-offset", "macros"]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "fs", "io-util", "signal", "process", "sync", "time"] }
 tracing = { version = "0.1.44", features = ["log"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json", "fmt"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.189"
