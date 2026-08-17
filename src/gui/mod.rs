@@ -9,9 +9,9 @@
 //! start extraction, follow progress and diagnostics, then see Completed or a
 //! recoverable failure.
 //!
-//! FIRST VIEWPORT: Product identity leads into a 70/30 work-and-settings split;
-//! the queue owns the large left field, the primary action anchors the right,
-//! and the bounded log spans the shell beneath the workspace.
+//! FIRST VIEWPORT: Product identity and utility actions lead into a 70/30
+//! work-and-settings split; the queue owns the large left field, Progress owns
+//! the primary action, and the bounded log spans the shell beneath the workspace.
 //!
 //! FORM: Reference-inherited desktop utility shell. Unreviewed and undocumented
 //! is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
@@ -21,6 +21,10 @@
 //! maps child tasks and translates child actions when a workflow crosses surface
 //! boundaries, including bounded `FFmpeg` log events.
 
+mod about;
+mod application_settings;
+mod close_confirmation;
+mod dialog;
 mod drop_zone;
 mod icon;
 mod logs;
@@ -34,10 +38,11 @@ mod style;
 mod toast;
 mod update;
 mod view;
+mod window_state;
 
 use std::sync::Arc;
 
-use iced::{Color, Size, Subscription, Theme, event, theme::Palette, window};
+use iced::{Color, Subscription, Theme, event, keyboard, theme::Palette, window};
 
 pub use self::{message::Message, state::Demux};
 
@@ -63,8 +68,8 @@ pub fn run() -> iced::Result {
         .theme(app_theme)
         .subscription(subscription)
         .window(window::Settings {
-            size: Size::new(1_180.0, 900.0),
-            min_size: Some(Size::new(860.0, 720.0)),
+            size: window_state::DEFAULT_WINDOW_SIZE,
+            min_size: Some(window_state::MIN_WINDOW_SIZE),
             exit_on_close_request: false,
             ..window::Settings::default()
         })
@@ -72,8 +77,9 @@ pub fn run() -> iced::Result {
 }
 
 fn subscription(_state: &Demux) -> Subscription<Message> {
-    event::listen_with(|event, _, _| match event {
+    event::listen_with(|event, status, _| match event {
         iced::Event::Window(event) => window_event(event),
+        iced::Event::Keyboard(event) if status == event::Status::Ignored => keyboard_event(event),
         _ => None,
     })
 }
@@ -92,7 +98,39 @@ fn window_event(event: window::Event) -> Option<Message> {
             tracing::info!(path = %path.display(), "media path dropped into queue");
             Some(Message::Queue(queue::Message::PathsDropped(vec![path])))
         }
+        window::Event::Resized(size) => Some(Message::WindowResized(size)),
+        window::Event::Moved(position) => Some(Message::WindowMoved(position)),
         window::Event::CloseRequested => Some(Message::CloseRequested),
+        _ => None,
+    }
+}
+
+fn keyboard_event(event: keyboard::Event) -> Option<Message> {
+    let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+        return None;
+    };
+
+    let command = modifiers.command();
+    match key.as_ref() {
+        keyboard::Key::Character("o" | "O") if command => {
+            Some(Message::Shortcut(if modifiers.shift() {
+                message::Shortcut::AddFolder
+            } else {
+                message::Shortcut::AddFiles
+            }))
+        }
+        keyboard::Key::Named(keyboard::key::Named::Delete) => {
+            Some(Message::Shortcut(message::Shortcut::RemoveSelected))
+        }
+        keyboard::Key::Named(keyboard::key::Named::Enter) if command => {
+            Some(Message::Shortcut(message::Shortcut::StartQueue))
+        }
+        keyboard::Key::Named(keyboard::key::Named::Space) => {
+            Some(Message::Shortcut(message::Shortcut::TogglePause))
+        }
+        keyboard::Key::Named(keyboard::key::Named::Escape) => {
+            Some(Message::Shortcut(message::Shortcut::Dismiss))
+        }
         _ => None,
     }
 }

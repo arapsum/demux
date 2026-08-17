@@ -4,7 +4,9 @@ use crate::{
 };
 
 use super::TaskResult;
-use super::{logs, output_settings, progress, queue, toast};
+use super::{
+    about, application_settings, close_confirmation, logs, output_settings, progress, queue, toast,
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -39,6 +41,25 @@ pub enum Message {
         job_id: JobId,
         result: TaskResult<RipTermination>,
     },
+    ApplicationSettings(application_settings::Message),
+    About(about::Message),
+    CloseConfirmation(close_confirmation::Message),
+    WindowResized(iced::Size),
+    WindowMoved(iced::Point),
+    WindowPreferencesReady(u64),
+    RestoreWindow(Option<iced::window::Id>),
+    ExternalLinkFinished(TaskResult<()>),
+    Shortcut(Shortcut),
     CloseRequested,
     Notifications(toast::Message),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shortcut {
+    AddFiles,
+    AddFolder,
+    RemoveSelected,
+    StartQueue,
+    TogglePause,
+    Dismiss,
 }

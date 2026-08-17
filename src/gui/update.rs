@@ -1,5 +1,5 @@
-use iced::Task;
 use iced::futures::SinkExt;
+use iced::{Task, window};
 
 use crate::{
     app::runtime,
@@ -10,7 +10,10 @@ use crate::{
     model::job::JobId,
 };
 
-use super::{logs, message::Message, output_settings, progress, queue, share_error, state::Demux};
+use super::{
+    about, application_settings, close_confirmation, logs, message::Message, output_settings,
+    progress, queue, share_error, state::Demux,
+};
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
@@ -34,14 +37,13 @@ impl Demux {
                 match result {
                     Ok(dependencies) => {
                         self.dependency_state = DependencyState::Ready(dependencies);
+                        self.application_settings.dependency_check_finished();
                     }
                     Err(error) => {
                         tracing::error!(error = %error, "dependency check failed");
                         let message = error.to_string();
-                        self.dependency_state = DependencyState::Failed {
-                            program: "ffmpeg/ffprobe",
-                            message: message.clone(),
-                        };
+                        self.dependency_state = dependency_state_from_error(&error);
+                        self.application_settings.dependency_check_finished();
                         self.error = Some(message);
                     }
                 }
@@ -50,12 +52,16 @@ impl Demux {
             Message::PreferencesLoaded(result) => {
                 match result {
                     Ok(defaults) => {
+                        self.window.apply_preferences(defaults.window);
                         if self
                             .output_settings
                             .apply_loaded_defaults(defaults.encoding, defaults.destination)
                         {
                             self.refresh_encoding_options();
                             self.refresh_output_path();
+                        }
+                        if defaults.window.geometry.is_some() {
+                            return window::latest().map(Message::RestoreWindow);
                         }
                     }
                     Err(error) => {
@@ -75,10 +81,19 @@ impl Demux {
                     tracing::error!(error = %error, "could not persist encoding defaults");
                     let message = error.to_string();
                     self.error = Some(message.clone());
+                    let exit_after_preferences = self.exit_after_preferences;
+                    self.exit_after_preferences = false;
+                    if exit_after_preferences {
+                        return iced::exit();
+                    }
                     return self
                         .notifications
                         .failure("Settings were not saved", message)
                         .map(Message::Notifications);
+                }
+                if self.exit_after_preferences {
+                    self.exit_after_preferences = false;
+                    return iced::exit();
                 }
                 Task::none()
             }
@@ -99,6 +114,7 @@ impl Demux {
                                 runtime::save_preferences(
                                     options,
                                     self.output_settings.destination_policy(),
+                                    self.window.preferences(),
                                     revision,
                                 ),
                                 |result| Message::PreferencesSaved(share_error(result)),
@@ -115,20 +131,19 @@ impl Demux {
                                 runtime::save_preferences(
                                     self.output_settings.options(),
                                     destination,
+                                    self.window.preferences(),
                                     revision,
                                 ),
                                 |result| Message::PreferencesSaved(share_error(result)),
                             ),
                         ]);
                     }
-                    output_settings::Action::StartRipping => {
-                        return self.update_queue(queue::Message::StartQueue);
-                    }
                 }
                 task.map(Message::OutputSettings)
             }
             Message::Progress(message) => match self.progress.update(message) {
                 progress::Action::None => Task::none(),
+                progress::Action::StartRequested => self.update_queue(queue::Message::StartQueue),
                 progress::Action::CancelRequested(job_id) => self.request_cancellation(&job_id),
                 progress::Action::PauseRequested(job_id) => {
                     self.request_pause(&job_id, PauseControlOperation::Pause)
@@ -185,19 +200,194 @@ impl Demux {
                 }
                 self.update_queue(queue::Message::RipCompleted { job_id, result })
             }
-            Message::CloseRequested => {
-                let Some(job_id) = self.queue.active_job_id() else {
-                    return iced::exit();
+            Message::ApplicationSettings(message) => {
+                let action = self
+                    .application_settings
+                    .update(message, self.queue.is_running());
+                match action {
+                    application_settings::Action::None => Task::none(),
+                    application_settings::Action::RememberGeometryChanged(remember) => {
+                        self.window.set_remember_geometry(remember);
+                        self.persist_preferences_now()
+                    }
+                    application_settings::Action::RecheckDependencies => {
+                        self.error = None;
+                        self.dependency_state = DependencyState::Checking;
+                        Task::perform(runtime::check_dependencies(), |result| {
+                            Message::DependenciesChecked(share_error(result))
+                        })
+                    }
+                    application_settings::Action::ResetOutputDefaults => {
+                        self.output_settings.reset_defaults();
+                        self.refresh_encoding_options();
+                        self.refresh_output_path();
+                        self.persist_preferences_now()
+                    }
+                }
+            }
+            Message::About(message) => match self.about.update(message) {
+                about::Action::None => Task::none(),
+                about::Action::OpenLink(link) => Task::perform(
+                    runtime::open_external_link(about::About::url(link)),
+                    |result| Message::ExternalLinkFinished(share_error(result)),
+                ),
+            },
+            Message::CloseConfirmation(message) => match self.close_confirmation.update(message) {
+                close_confirmation::Action::None | close_confirmation::Action::KeepWorking => {
+                    Task::none()
+                }
+                close_confirmation::Action::CancelAndClose => {
+                    let Some(job_id) = self.queue.active_job_id() else {
+                        return self.request_exit();
+                    };
+                    self.exit_after_queue = true;
+                    self.progress.mark_cancelling(&job_id);
+                    self.request_cancellation(&job_id)
+                }
+            },
+            Message::WindowResized(size) => {
+                self.window.resized(size);
+                self.schedule_window_persist()
+            }
+            Message::WindowMoved(position) => {
+                self.window.moved(position);
+                self.schedule_window_persist()
+            }
+            Message::WindowPreferencesReady(revision) => {
+                if self.pending_window_revision == Some(revision) {
+                    self.pending_window_revision = None;
+                    self.persist_preferences(revision)
+                } else {
+                    Task::none()
+                }
+            }
+            Message::RestoreWindow(id) => {
+                let Some(id) = id else {
+                    return Task::none();
                 };
-                self.exit_after_queue = true;
-                self.progress.mark_cancelling(&job_id);
-                self.request_cancellation(&job_id)
+                let resize = window::resize(id, self.window.size());
+                let Some(position) = self.window.position() else {
+                    return resize;
+                };
+                Task::batch([resize, window::move_to(id, position)])
+            }
+            Message::ExternalLinkFinished(result) => match result {
+                Ok(()) => Task::none(),
+                Err(error) => self
+                    .notifications
+                    .failure("Could not open link", error.to_string())
+                    .map(Message::Notifications),
+            },
+            Message::Shortcut(shortcut) => self.handle_shortcut(shortcut),
+            Message::CloseRequested => {
+                if self.application_settings.is_open() {
+                    self.application_settings.update(
+                        application_settings::Message::Close,
+                        self.queue.is_running(),
+                    );
+                }
+                if self.about.is_open() {
+                    self.about.update(about::Message::Close);
+                }
+                if self.queue.active_job_id().is_some() {
+                    self.close_confirmation
+                        .update(close_confirmation::Message::Open);
+                    Task::none()
+                } else {
+                    self.request_exit()
+                }
             }
             Message::Notifications(message) => self
                 .notifications
                 .update(message)
                 .map(Message::Notifications),
         }
+    }
+
+    fn handle_shortcut(&mut self, shortcut: super::message::Shortcut) -> Task<Message> {
+        match shortcut {
+            super::message::Shortcut::AddFiles if !self.queue.is_busy() => {
+                self.update_queue(queue::Message::AddFiles)
+            }
+            super::message::Shortcut::AddFolder if !self.queue.is_busy() => {
+                self.update_queue(queue::Message::AddFolder)
+            }
+            super::message::Shortcut::RemoveSelected => {
+                let Some(job_id) = self.queue.selected().map(|job| job.id.clone()) else {
+                    return Task::none();
+                };
+                self.update_queue(queue::Message::Remove(job_id))
+            }
+            super::message::Shortcut::StartQueue => {
+                match self.progress.update(progress::Message::Start) {
+                    progress::Action::StartRequested => {
+                        self.update_queue(queue::Message::StartQueue)
+                    }
+                    _ => Task::none(),
+                }
+            }
+            super::message::Shortcut::TogglePause => {
+                match self.progress.update(progress::Message::TogglePause) {
+                    progress::Action::PauseRequested(job_id) => {
+                        self.request_pause(&job_id, PauseControlOperation::Pause)
+                    }
+                    progress::Action::ResumeRequested(job_id) => {
+                        self.request_pause(&job_id, PauseControlOperation::Resume)
+                    }
+                    _ => Task::none(),
+                }
+            }
+            super::message::Shortcut::Dismiss => {
+                if self.close_confirmation.is_open() {
+                    self.update(Message::CloseConfirmation(
+                        close_confirmation::Message::KeepWorking,
+                    ))
+                } else if self.application_settings.is_open() {
+                    self.update(Message::ApplicationSettings(
+                        application_settings::Message::Close,
+                    ))
+                } else if self.about.is_open() {
+                    self.update(Message::About(about::Message::Close))
+                } else {
+                    self.notifications
+                        .update(super::toast::Message::DismissAll)
+                        .map(Message::Notifications)
+                }
+            }
+            _ => Task::none(),
+        }
+    }
+
+    fn schedule_window_persist(&mut self) -> Task<Message> {
+        let revision = runtime::next_preferences_revision();
+        self.pending_window_revision = Some(revision);
+        Task::perform(
+            window_persist_delay(revision),
+            Message::WindowPreferencesReady,
+        )
+    }
+
+    fn persist_preferences_now(&mut self) -> Task<Message> {
+        let revision = runtime::next_preferences_revision();
+        self.pending_window_revision = None;
+        self.persist_preferences(revision)
+    }
+
+    fn persist_preferences(&self, revision: u64) -> Task<Message> {
+        Task::perform(
+            runtime::save_preferences(
+                self.output_settings.options(),
+                self.output_settings.destination_policy(),
+                self.window.preferences(),
+                revision,
+            ),
+            |result| Message::PreferencesSaved(share_error(result)),
+        )
+    }
+
+    fn request_exit(&mut self) -> Task<Message> {
+        self.exit_after_preferences = true;
+        self.persist_preferences_now()
     }
 
     fn update_queue(&mut self, message: queue::Message) -> Task<Message> {
@@ -322,7 +512,7 @@ impl Demux {
             queue::Action::QueueFinished { summary, error } => {
                 if self.exit_after_queue {
                     self.exit_after_queue = false;
-                    return iced::exit();
+                    return self.request_exit();
                 }
                 let body = format!(
                     "{} completed, {} failed, {} skipped, {} cancelled.",
@@ -439,6 +629,22 @@ impl Demux {
             .failure("Pause control failed", message)
             .map(Message::Notifications);
         Task::batch([logs_task, notification])
+    }
+}
+
+async fn window_persist_delay(revision: u64) -> u64 {
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    revision
+}
+
+fn dependency_state_from_error(error: &crate::Error) -> DependencyState {
+    if let crate::Error::Dependency(dependency) = error {
+        DependencyState::from(dependency)
+    } else {
+        DependencyState::Failed {
+            program: "ffmpeg/ffprobe",
+            message: error.to_string(),
+        }
     }
 }
 
@@ -815,6 +1021,15 @@ mod tests {
 
         let _ = state.update(Message::CloseRequested);
 
+        assert!(state.close_confirmation.is_open());
+        assert!(!state.exit_after_queue);
+        assert!(!handle.is_cancelled());
+
+        let _ = state.update(Message::CloseConfirmation(
+            close_confirmation::Message::CancelAndClose,
+        ));
+
+        assert!(!state.close_confirmation.is_open());
         assert!(state.exit_after_queue);
         assert!(handle.is_cancelled());
         assert!(matches!(

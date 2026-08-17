@@ -41,6 +41,25 @@ pub fn inset_panel(_theme: &Theme) -> container::Style {
         })
 }
 
+pub fn dialog_backdrop(_theme: &Theme) -> container::Style {
+    container::Style::default().background(Color::from_rgba(0.0, 0.0, 0.0, 0.68))
+}
+
+pub fn dialog_panel(_theme: &Theme) -> container::Style {
+    container::Style::default()
+        .background(Color::from_rgb(0.085, 0.092, 0.112))
+        .border(Border {
+            color: Color::from_rgb(0.25, 0.26, 0.32),
+            width: 1.0,
+            radius: 14.0.into(),
+        })
+        .shadow(Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.38),
+            offset: iced::Vector::new(0.0, 10.0),
+            blur_radius: 28.0,
+        })
+}
+
 pub fn queue_header(_theme: &Theme) -> container::Style {
     container::Style::default().background(Color::from_rgb(0.075, 0.08, 0.098))
 }

@@ -26,6 +26,7 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     None,
+    StartRequested,
     CancelRequested(JobId),
     PauseRequested(JobId),
     ResumeRequested(JobId),
@@ -65,6 +66,8 @@ pub enum Message {
     Pause,
     Resume,
     Cancel,
+    Start,
+    TogglePause,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +106,17 @@ impl Progress {
     #[allow(clippy::too_many_lines)]
     pub(crate) fn update(&mut self, message: Message) -> Action {
         match message {
+            Message::Start => Action::StartRequested,
+            Message::TogglePause => {
+                let Some(active) = self.active.as_ref() else {
+                    return Action::None;
+                };
+                match active.status {
+                    Status::Running => self.update(Message::Pause),
+                    Status::Paused => self.update(Message::Resume),
+                    _ => Action::None,
+                }
+            }
             Message::Started {
                 job_id,
                 request,
@@ -256,13 +270,22 @@ impl Progress {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn view(&self) -> Element<'_, Message> {
+    pub(crate) fn view(&self, can_start: bool) -> Element<'_, Message> {
         let heading = text("Progress").size(17).font(Font {
             weight: Weight::Semibold,
             ..Font::default()
         });
 
         let Some(active) = &self.active else {
+            let start = button(
+                row![icon::play(BUTTON_TEXT), text("Start Ripping").size(13)]
+                    .spacing(7)
+                    .align_y(iced::Alignment::Center),
+            )
+            .padding(Padding::from([9, 16]))
+            .style(super::style::primary_action)
+            .on_press_maybe(can_start.then_some(Message::Start));
+
             return container(
                 column![
                     heading,
@@ -281,6 +304,7 @@ impl Progress {
                     .width(Fill)
                     .padding(14)
                     .style(inset_panel),
+                    row![space::horizontal(), start],
                 ]
                 .spacing(10),
             )

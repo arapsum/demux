@@ -21,6 +21,7 @@ const FAILURE_DURATION: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
     Dismiss(ToastId),
+    DismissAll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +66,10 @@ impl Notifications {
         match message {
             Message::Dismiss(id) => {
                 self.toasts.retain(|toast| toast.id != id);
+                iced::Task::none()
+            }
+            Message::DismissAll => {
+                self.toasts.clear();
                 iced::Task::none()
             }
         }

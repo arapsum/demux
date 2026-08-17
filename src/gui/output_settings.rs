@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     presentation::{DependencyPresentation, StatusPresentation},
-    style::{TEXT_MUTED, inset_panel, panel, primary_action, secondary_action, settings_select},
+    style::{TEXT_MUTED, inset_panel, panel, secondary_action, settings_select},
 };
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,6 @@ pub enum Message {
     FolderChanged(String),
     Browse,
     FolderSelected(Option<PathBuf>),
-    StartRipping,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +42,6 @@ pub enum Action {
     OutputChanged,
     EncodingChanged(RipOptions),
     DestinationChanged(DestinationPolicy),
-    StartRipping,
 }
 
 #[derive(Debug)]
@@ -140,7 +138,6 @@ impl OutputSettings {
                 self.folder = path.to_string_lossy().into_owned();
                 (Action::OutputChanged, Task::none())
             }
-            Message::StartRipping => (Action::StartRipping, Task::none()),
         }
     }
 
@@ -168,6 +165,12 @@ impl OutputSettings {
 
     pub(crate) const fn destination_policy(&self) -> DestinationPolicy {
         self.destination
+    }
+
+    pub(crate) fn reset_defaults(&mut self) {
+        self.options = RipOptions::default();
+        self.destination = DestinationPolicy::default();
+        self.defaults_modified = true;
     }
 
     pub(crate) fn apply_loaded_defaults(
@@ -204,8 +207,8 @@ impl OutputSettings {
         job_status: Option<&JobStatus>,
         selected_job: Option<&RipJob>,
         run_progress: Option<(usize, usize)>,
-        can_start: bool,
         has_folder_hierarchy: bool,
+        compact: bool,
     ) -> Element<'a, Message> {
         let dependencies = DependencyPresentation::from(dependency_state);
         let output_locked = run_progress.is_some();
@@ -241,16 +244,6 @@ impl OutputSettings {
         } else {
             browse.on_press(Message::Browse)
         };
-        let start_label = run_progress.map_or_else(
-            || "Start Ripping".to_owned(),
-            |(position, total)| format!("Ripping {position} of {total}…"),
-        );
-        let start = button(text(start_label).size(15))
-            .width(Fill)
-            .padding(13)
-            .style(primary_action)
-            .on_press_maybe(can_start.then_some(Message::StartRipping));
-
         let format: Element<'_, Message> = if output_locked {
             locked_value(self.options.format.to_string())
         } else {
@@ -376,20 +369,19 @@ impl OutputSettings {
                     ..Font::default()
                 }),
                 scrollable(controls).height(Fill),
-                start,
-                text(if can_start {
-                    "Ready to process every eligible job"
-                } else if run_progress.is_some() {
+                text(if run_progress.is_some() {
                     "The queue is running one extraction at a time"
+                } else if matches!(dependency_state, DependencyState::Ready(_)) {
+                    "Start extraction from Progress when every job is ready"
                 } else {
-                    "Add a valid video and wait for every probe to finish"
+                    "FFmpeg must be ready before extraction can start"
                 })
                 .size(12)
                 .color(TEXT_MUTED),
             ]
             .spacing(14),
         )
-        .width(FillPortion(3))
+        .width(if compact { Fill } else { FillPortion(3) })
         .height(Fill)
         .padding(20)
         .style(panel)
