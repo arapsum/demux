@@ -1,14 +1,17 @@
 //! THESIS: Demux makes one media extraction legible from selection through outcome;
-//! the shell avoids controls for engine capabilities that do not exist yet.
+//! the bounded `FFmpeg` log keeps external process diagnostics visible without
+//! turning the shell into a terminal.
 //!
 //! OWN-WORLD: Near-black neutral surfaces, one restrained violet action color,
 //! fine borders, compact native controls, and explicit semantic status colors.
 //!
 //! STORY: Choose a video, confirm its discovered audio stream and destination,
-//! start extraction, then see Completed or a recoverable failure.
+//! start extraction, follow progress and diagnostics, then see Completed or a
+//! recoverable failure.
 //!
 //! FIRST VIEWPORT: Product identity leads into a 70/30 work-and-settings split;
-//! the queue owns the large left field and the primary action anchors the right.
+//! the queue owns the large left field, the primary action anchors the right,
+//! and the bounded log spans the shell beneath the workspace.
 //!
 //! FORM: Reference-inherited desktop utility shell. Unreviewed and undocumented
 //! is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
@@ -16,10 +19,11 @@
 //! ARCHITECTURE: Demux is the composition root. Independent GUI surfaces own
 //! their local state, messages, initialization, update logic, and view. The root
 //! maps child tasks and translates child actions when a workflow crosses surface
-//! boundaries.
+//! boundaries, including bounded `FFmpeg` log events.
 
 mod drop_zone;
 mod icon;
+mod logs;
 mod message;
 mod output_settings;
 mod presentation;
@@ -59,8 +63,8 @@ pub fn run() -> iced::Result {
         .theme(app_theme)
         .subscription(subscription)
         .window(window::Settings {
-            size: Size::new(1_180.0, 760.0),
-            min_size: Some(Size::new(860.0, 600.0)),
+            size: Size::new(1_180.0, 900.0),
+            min_size: Some(Size::new(860.0, 720.0)),
             exit_on_close_request: false,
             ..window::Settings::default()
         })

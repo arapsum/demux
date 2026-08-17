@@ -3,6 +3,7 @@ use crate::{
     model::job::JobId,
 };
 
+use super::logs::Logs;
 use super::output_settings::OutputSettings;
 use super::progress::Progress;
 use super::queue::Queue;
@@ -14,6 +15,7 @@ pub struct Demux {
     pub(crate) queue: Queue,
     pub(crate) output_settings: OutputSettings,
     pub(crate) progress: Progress,
+    pub(crate) logs: Logs,
     pub(crate) error: Option<String>,
     pub(crate) notifications: Notifications,
     pub(crate) active_cancellation: Option<(JobId, CancellationHandle)>,
@@ -27,6 +29,7 @@ impl Default for Demux {
             queue: Queue::new(),
             output_settings: OutputSettings::new(),
             progress: Progress::new(),
+            logs: Logs::new(),
             error: None,
             notifications: Notifications::new(),
             active_cancellation: None,

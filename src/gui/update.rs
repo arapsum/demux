@@ -7,7 +7,7 @@ use crate::{
     model::job::JobId,
 };
 
-use super::{message::Message, output_settings, progress, queue, share_error, state::Demux};
+use super::{logs, message::Message, output_settings, progress, queue, share_error, state::Demux};
 
 impl Demux {
     pub fn new() -> (Self, Task<Message>) {
@@ -128,6 +128,16 @@ impl Demux {
                 progress::Action::None => Task::none(),
                 progress::Action::CancelRequested(job_id) => self.request_cancellation(&job_id),
             },
+            Message::Logs(message) => self.update_logs(message),
+            Message::RipStarted { job_id, filename } => {
+                self.update_logs(logs::Message::JobStarted { job_id, filename })
+            }
+            Message::RipLogs { job_id, events } => {
+                self.update_logs(logs::Message::Append { job_id, events })
+            }
+            Message::RipFinished { job_id, status } => {
+                self.update_logs(logs::Message::JobFinished { job_id, status })
+            }
             Message::RipProgress { job_id, progress } => {
                 if self.queue.is_active_job(&job_id) {
                     let _ = self.progress.update(progress::Message::Advanced {
@@ -223,6 +233,25 @@ impl Demux {
                 local_task
             }
         }
+    }
+
+    fn update_logs(&mut self, message: logs::Message) -> Task<Message> {
+        let (action, task) = self.logs.update(message);
+        let local_task = task.map(Message::Logs);
+        let action_task = match action {
+            logs::Action::None => Task::none(),
+            logs::Action::Saved(path) => self
+                .notifications
+                .success("FFmpeg log saved", path.display().to_string())
+                .map(Message::Notifications),
+            logs::Action::SaveFailed(message) => {
+                self.error = Some(message.clone());
+                self.notifications
+                    .failure("FFmpeg log could not be saved", message)
+                    .map(Message::Notifications)
+            }
+        };
+        Task::batch([local_task, action_task])
     }
 
     fn handle_queue_action(&mut self, action: queue::Action) -> Task<Message> {
@@ -334,13 +363,33 @@ fn rip_task(
 ) -> Task<Message> {
     let stream = iced::stream::channel(32, async move |mut output| {
         let (progress_sender, mut progress_receiver) = tokio::sync::mpsc::channel(16);
-        let rip =
-            runtime::rip_with_progress(job_id.clone(), request, progress_sender, cancellation);
+        let (log_sender, mut log_receiver) = tokio::sync::mpsc::channel(256);
+        let filename = std::path::Path::new(&request.input)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Unknown file")
+            .to_owned();
+        let _ = output
+            .send(Message::RipStarted {
+                job_id: job_id.clone(),
+                filename,
+            })
+            .await;
+        let rip = runtime::rip_with_progress(
+            job_id.clone(),
+            request,
+            progress_sender,
+            log_sender,
+            cancellation,
+        );
         tokio::pin!(rip);
         let mut progress_open = true;
+        let mut logs_open = true;
+        let mut result = None;
 
-        loop {
+        while result.is_none() || progress_open || logs_open {
             tokio::select! {
+                biased;
                 progress = progress_receiver.recv(), if progress_open => {
                     match progress {
                         Some(progress) => {
@@ -352,17 +401,54 @@ fn rip_task(
                         None => progress_open = false,
                     }
                 }
-                result = &mut rip => {
-                    let _ = output
-                        .send(Message::RipCompleted {
-                            job_id,
-                            result: share_error(result),
-                        })
-                        .await;
-                    break;
+                log = log_receiver.recv(), if logs_open => {
+                    match log {
+                        Some(first) => {
+                            let mut events = vec![first];
+                            while events.len() < 64 {
+                                match log_receiver.try_recv() {
+                                    Ok(event) => events.push(event),
+                                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                                        logs_open = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            let _ = output.try_send(Message::RipLogs {
+                                job_id: job_id.clone(),
+                                events,
+                            });
+                        }
+                        None => logs_open = false,
+                    }
+                }
+                rip_result = &mut rip, if result.is_none() => {
+                    result = Some(rip_result);
                 }
             }
         }
+
+        let result = result.expect("rip task must produce a terminal result");
+        let status = match &result {
+            Ok(crate::ffmpeg::RipTermination::Completed(_)) => logs::JobTerminalStatus::Completed,
+            Ok(crate::ffmpeg::RipTermination::Cancelled { .. }) => {
+                logs::JobTerminalStatus::Cancelled
+            }
+            Err(_) => logs::JobTerminalStatus::Failed,
+        };
+        let _ = output
+            .send(Message::RipFinished {
+                job_id: job_id.clone(),
+                status,
+            })
+            .await;
+        let _ = output
+            .send(Message::RipCompleted {
+                job_id,
+                result: share_error(result),
+            })
+            .await;
     });
 
     Task::run(stream, std::convert::identity)

@@ -1,10 +1,10 @@
 use crate::{
-    ffmpeg::{Dependencies, RipProgressEvent, RipTermination},
+    ffmpeg::{Dependencies, FfmpegLogEvent, RipProgressEvent, RipTermination},
     model::job::JobId,
 };
 
 use super::TaskResult;
-use super::{output_settings, progress, queue, toast};
+use super::{logs, output_settings, progress, queue, toast};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -14,6 +14,19 @@ pub enum Message {
     Queue(queue::Message),
     OutputSettings(output_settings::Message),
     Progress(progress::Message),
+    Logs(logs::Message),
+    RipLogs {
+        job_id: JobId,
+        events: Vec<FfmpegLogEvent>,
+    },
+    RipStarted {
+        job_id: JobId,
+        filename: String,
+    },
+    RipFinished {
+        job_id: JobId,
+        status: logs::JobTerminalStatus,
+    },
     RipProgress {
         job_id: JobId,
         progress: RipProgressEvent,

@@ -50,9 +50,13 @@ impl Demux {
 
         let workspace = row![work_area, self.settings_panel()]
             .spacing(16)
-            .height(Fill);
+            .height(FillPortion(3));
 
-        let content = container(column![header, workspace].spacing(18))
+        let logs = container(self.logs.view().map(Message::Logs))
+            .width(Fill)
+            .height(FillPortion(1));
+
+        let content = container(column![header, workspace, logs].spacing(18))
             .width(Fill)
             .height(Fill)
             .padding(Padding::from([24, 26]))
