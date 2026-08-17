@@ -1,5 +1,5 @@
 use crate::{
-    ffmpeg::{Dependencies, FfmpegLogEvent, RipProgressEvent, RipTermination},
+    ffmpeg::{Dependencies, FfmpegLogEvent, PauseControlEvent, RipProgressEvent, RipTermination},
     model::job::JobId,
 };
 
@@ -26,6 +26,10 @@ pub enum Message {
     RipFinished {
         job_id: JobId,
         status: logs::JobTerminalStatus,
+    },
+    RipControl {
+        job_id: JobId,
+        event: PauseControlEvent,
     },
     RipProgress {
         job_id: JobId,

@@ -1,7 +1,8 @@
 use iced::widget::Text;
 use iced::{Color, Theme};
 use lucide_icons::iced::{
-    icon_download, icon_file_plus_2, icon_file_video_2, icon_folder_plus, icon_square, icon_trash_2,
+    icon_download, icon_file_plus_2, icon_file_video_2, icon_folder_plus, icon_pause, icon_play,
+    icon_square, icon_trash_2,
 };
 
 pub fn add_files(color: Color) -> Text<'static, Theme> {
@@ -30,4 +31,12 @@ pub fn queue_media(color: Color) -> Text<'static, Theme> {
 
 pub fn stop(color: Color) -> Text<'static, Theme> {
     icon_square().size(14).color(color)
+}
+
+pub fn pause(color: Color) -> Text<'static, Theme> {
+    icon_pause().size(14).color(color)
+}
+
+pub fn play(color: Color) -> Text<'static, Theme> {
+    icon_play().size(14).color(color)
 }

@@ -3,7 +3,10 @@ use iced::futures::SinkExt;
 
 use crate::{
     app::runtime,
-    ffmpeg::{DependencyState, RipTermination, cancellation_pair},
+    ffmpeg::{
+        DependencyState, PauseCapability, PauseControlEvent, PauseControlOperation, RipTermination,
+        cancellation_pair, pause_control_pair,
+    },
     model::job::JobId,
 };
 
@@ -127,6 +130,12 @@ impl Demux {
             Message::Progress(message) => match self.progress.update(message) {
                 progress::Action::None => Task::none(),
                 progress::Action::CancelRequested(job_id) => self.request_cancellation(&job_id),
+                progress::Action::PauseRequested(job_id) => {
+                    self.request_pause(&job_id, PauseControlOperation::Pause)
+                }
+                progress::Action::ResumeRequested(job_id) => {
+                    self.request_pause(&job_id, PauseControlOperation::Resume)
+                }
             },
             Message::Logs(message) => self.update_logs(message),
             Message::RipStarted { job_id, filename } => {
@@ -138,6 +147,7 @@ impl Demux {
             Message::RipFinished { job_id, status } => {
                 self.update_logs(logs::Message::JobFinished { job_id, status })
             }
+            Message::RipControl { job_id, event } => self.handle_control_event(job_id, event),
             Message::RipProgress { job_id, progress } => {
                 if self.queue.is_active_job(&job_id) {
                     let _ = self.progress.update(progress::Message::Advanced {
@@ -165,6 +175,13 @@ impl Demux {
                     .is_some_and(|(active, _)| active == &job_id)
                 {
                     self.active_cancellation = None;
+                }
+                if self
+                    .active_pause_control
+                    .as_ref()
+                    .is_some_and(|(active, _)| active == &job_id)
+                {
+                    self.active_pause_control = None;
                 }
                 self.update_queue(queue::Message::RipCompleted { job_id, result })
             }
@@ -293,10 +310,14 @@ impl Demux {
                     job_id: job_id.clone(),
                     request: request.clone(),
                     progress: initial_progress,
+                    pause_capability: PauseCapability::current(),
                 });
                 let (handle, signal) = cancellation_pair();
+                let pause_capability = PauseCapability::current();
+                let (pause_handle, pause_signal) = pause_control_pair(pause_capability);
                 self.active_cancellation = Some((job_id.clone(), handle));
-                rip_task(job_id, *request, signal)
+                self.active_pause_control = Some((job_id.clone(), pause_handle));
+                rip_task(job_id, *request, signal, pause_signal)
             }
             queue::Action::QueueFinished { summary, error } => {
                 if self.exit_after_queue {
@@ -354,16 +375,93 @@ impl Demux {
         }
         self.handle_queue_action(action)
     }
+
+    fn request_pause(&mut self, job_id: &JobId, operation: PauseControlOperation) -> Task<Message> {
+        let Some((active, handle)) = &self.active_pause_control else {
+            let message = "Pause control is not available for the active extraction.".to_owned();
+            let _ = self
+                .progress
+                .update(progress::Message::ControlRequestFailed {
+                    job_id: job_id.clone(),
+                    operation,
+                });
+            self.error = Some(message.clone());
+            return self
+                .notifications
+                .failure("Pause control unavailable", message)
+                .map(Message::Notifications);
+        };
+        if active != job_id {
+            return Task::none();
+        }
+
+        match handle.request(operation) {
+            Ok(()) => {
+                match operation {
+                    PauseControlOperation::Pause => self.queue.mark_pausing(job_id),
+                    PauseControlOperation::Resume => self.queue.mark_resuming(job_id),
+                }
+                Task::none()
+            }
+            Err(error) => {
+                let message = error.to_string();
+                let _ = self
+                    .progress
+                    .update(progress::Message::ControlRequestFailed {
+                        job_id: job_id.clone(),
+                        operation,
+                    });
+                self.error = Some(message.clone());
+                self.notifications
+                    .failure(format!("Could not {operation} extraction"), message)
+                    .map(Message::Notifications)
+            }
+        }
+    }
+
+    fn handle_control_event(&mut self, job_id: JobId, event: PauseControlEvent) -> Task<Message> {
+        let message = event_failure_message(&event);
+        let _ = self.progress.update(progress::Message::ControlEvent {
+            job_id: job_id.clone(),
+            event: event.clone(),
+        });
+        let _ = self.queue.update(queue::Message::ControlEvent {
+            job_id: job_id.clone(),
+            event: event.clone(),
+        });
+        let logs_task = self.update_logs(logs::Message::ControlEvent { job_id, event });
+        let Some(message) = message else {
+            return logs_task;
+        };
+        self.error = Some(message.clone());
+        let notification = self
+            .notifications
+            .failure("Pause control failed", message)
+            .map(Message::Notifications);
+        Task::batch([logs_task, notification])
+    }
 }
 
+fn event_failure_message(event: &PauseControlEvent) -> Option<String> {
+    match event {
+        PauseControlEvent::Failed {
+            operation, message, ..
+        } => Some(format!("Could not {operation} extraction: {message}")),
+        PauseControlEvent::Paused { .. } | PauseControlEvent::Resumed { .. } => None,
+    }
+}
+
+#[allow(clippy::too_many_lines)]
 fn rip_task(
     job_id: crate::model::job::JobId,
     request: crate::ffmpeg::RipRequest,
     cancellation: crate::ffmpeg::CancellationSignal,
+    pause_control: crate::ffmpeg::PauseControlSignal,
 ) -> Task<Message> {
     let stream = iced::stream::channel(32, async move |mut output| {
         let (progress_sender, mut progress_receiver) = tokio::sync::mpsc::channel(16);
         let (log_sender, mut log_receiver) = tokio::sync::mpsc::channel(256);
+        let (control_sender, mut control_receiver) = tokio::sync::mpsc::channel(16);
         let filename = std::path::Path::new(&request.input)
             .file_name()
             .and_then(|name| name.to_str())
@@ -381,13 +479,16 @@ fn rip_task(
             progress_sender,
             log_sender,
             cancellation,
+            pause_control,
+            control_sender,
         );
         tokio::pin!(rip);
         let mut progress_open = true;
         let mut logs_open = true;
+        let mut controls_open = true;
         let mut result = None;
 
-        while result.is_none() || progress_open || logs_open {
+        while result.is_none() || progress_open || logs_open || controls_open {
             tokio::select! {
                 biased;
                 progress = progress_receiver.recv(), if progress_open => {
@@ -421,6 +522,17 @@ fn rip_task(
                             });
                         }
                         None => logs_open = false,
+                    }
+                }
+                control = control_receiver.recv(), if controls_open => {
+                    match control {
+                        Some(event) => {
+                            let _ = output.send(Message::RipControl {
+                                job_id: job_id.clone(),
+                                event,
+                            }).await;
+                        }
+                        None => controls_open = false,
                     }
                 }
                 rip_result = &mut rip, if result.is_none() => {

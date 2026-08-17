@@ -9,7 +9,7 @@ use time::{OffsetDateTime, UtcOffset, macros::format_description};
 
 use crate::{
     Error,
-    ffmpeg::{FfmpegLogEvent, RipPhase},
+    ffmpeg::{FfmpegLogEvent, PauseControlEvent, RipPhase},
     model::job::JobId,
 };
 
@@ -42,6 +42,10 @@ pub enum Message {
     JobFinished {
         job_id: JobId,
         status: JobTerminalStatus,
+    },
+    ControlEvent {
+        job_id: JobId,
+        event: PauseControlEvent,
     },
     Clear,
     Scrolled(scrollable::Viewport),
@@ -121,6 +125,7 @@ impl Logs {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn update(&mut self, message: Message) -> (Action, Task<Message>) {
         match message {
             Message::JobStarted { job_id, filename } => {
@@ -157,6 +162,37 @@ impl Logs {
                     timestamp: SystemTime::now(),
                     phase: None,
                     message: format!("── FFmpeg job {label} ──"),
+                    tone,
+                });
+                self.follow_task()
+            }
+            Message::ControlEvent { job_id, event } => {
+                let (message, tone, phase) = match event {
+                    PauseControlEvent::Paused { phase } => (
+                        "── FFmpeg job paused ──".to_owned(),
+                        Tone::Warning,
+                        Some(phase),
+                    ),
+                    PauseControlEvent::Resumed { phase } => (
+                        "── FFmpeg job resumed ──".to_owned(),
+                        Tone::Normal,
+                        Some(phase),
+                    ),
+                    PauseControlEvent::Failed {
+                        operation,
+                        phase,
+                        message,
+                    } => (
+                        format!("── Could not {operation} FFmpeg job: {message} ──"),
+                        Tone::Error,
+                        Some(phase),
+                    ),
+                };
+                self.push(LogEntry {
+                    job_id,
+                    timestamp: SystemTime::now(),
+                    phase,
+                    message,
                     tone,
                 });
                 self.follow_task()

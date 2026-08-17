@@ -9,7 +9,7 @@ use crate::{
         intake::{AcceptedInput, IntakeResult, RejectedInput},
         queue_runner::{QueueRunSummary, QueueRunner},
     },
-    ffmpeg::{RipPhase, RipProgressEvent, RipRequest, RipTermination},
+    ffmpeg::{PauseControlEvent, RipPhase, RipProgressEvent, RipRequest, RipTermination},
     model::{
         encoding::RipOptions,
         job::{JobId, JobStatus, RipJob, RipProgress},
@@ -56,6 +56,10 @@ pub enum Message {
     ProgressReceived {
         job_id: JobId,
         progress: RipProgressEvent,
+    },
+    ControlEvent {
+        job_id: JobId,
+        event: PauseControlEvent,
     },
     RipCompleted {
         job_id: JobId,
@@ -264,6 +268,10 @@ impl Queue {
                 self.record_progress(&job_id, &progress);
                 (Action::None, Task::none())
             }
+            Message::ControlEvent { job_id, event } => {
+                self.record_control_event(&job_id, &event);
+                (Action::None, Task::none())
+            }
             Message::RipCompleted { job_id, result } => {
                 let action = self.finish_active(&job_id, result);
                 (action, Task::none())
@@ -340,6 +348,9 @@ impl Queue {
                 JobStatus::Queued
                     | JobStatus::Analyzing
                     | JobStatus::Ripping
+                    | JobStatus::Pausing
+                    | JobStatus::Paused
+                    | JobStatus::Resuming
                     | JobStatus::Completed
             ) {
                 job.output = derive(job).to_string_lossy().into_owned();
@@ -488,7 +499,12 @@ impl Queue {
         };
         if !matches!(
             job.status,
-            JobStatus::Analyzing | JobStatus::Ripping | JobStatus::Cancelling
+            JobStatus::Analyzing
+                | JobStatus::Ripping
+                | JobStatus::Cancelling
+                | JobStatus::Pausing
+                | JobStatus::Paused
+                | JobStatus::Resuming
         ) {
             return Action::None;
         }
@@ -549,6 +565,54 @@ impl Queue {
         Action::None
     }
 
+    pub(crate) fn mark_pausing(&mut self, job_id: &JobId) {
+        if !self.is_active_job(job_id) {
+            return;
+        }
+        if let Some(job) = self.job_mut(job_id) {
+            let analyzing = matches!(job.status, JobStatus::Analyzing);
+            if matches!(job.status, JobStatus::Analyzing | JobStatus::Ripping) {
+                job.start_pausing(analyzing);
+            }
+        }
+    }
+
+    pub(crate) fn mark_resuming(&mut self, job_id: &JobId) {
+        if !self.is_active_job(job_id) {
+            return;
+        }
+        if let Some(job) = self
+            .job_mut(job_id)
+            .filter(|job| matches!(job.status, JobStatus::Paused))
+        {
+            job.start_resuming();
+        }
+    }
+
+    fn record_control_event(&mut self, job_id: &JobId, event: &PauseControlEvent) {
+        if !self.is_active_job(job_id) {
+            return;
+        }
+        let Some(job) = self.job_mut(job_id) else {
+            return;
+        };
+        match event {
+            PauseControlEvent::Paused { phase } => {
+                if matches!(job.status, JobStatus::Pausing) {
+                    job.mark_paused(matches!(phase, RipPhase::Analyzing));
+                }
+            }
+            PauseControlEvent::Resumed { .. } => {
+                if matches!(job.status, JobStatus::Resuming) {
+                    job.mark_resumed();
+                }
+            }
+            PauseControlEvent::Failed { operation, .. } => {
+                job.control_failed(*operation);
+            }
+        }
+    }
+
     fn record_progress(&mut self, job_id: &JobId, event: &RipProgressEvent) {
         if !self.is_active_job(job_id) {
             return;
@@ -556,14 +620,19 @@ impl Queue {
         let Some(job) = self.job_mut(job_id) else {
             return;
         };
-        match event.phase {
-            RipPhase::Analyzing if !matches!(job.status, JobStatus::Analyzing) => {
-                job.start_analyzing();
+        if !matches!(
+            job.status,
+            JobStatus::Pausing | JobStatus::Paused | JobStatus::Resuming
+        ) {
+            match event.phase {
+                RipPhase::Analyzing if !matches!(job.status, JobStatus::Analyzing) => {
+                    job.start_analyzing();
+                }
+                RipPhase::Encoding if !matches!(job.status, JobStatus::Ripping) => {
+                    job.reset_for_encoding();
+                }
+                _ => {}
             }
-            RipPhase::Encoding if !matches!(job.status, JobStatus::Ripping) => {
-                job.reset_for_encoding();
-            }
-            _ => {}
         }
 
         job.record_progress(
@@ -850,7 +919,14 @@ impl Queue {
                 |column, (index, job)| {
                     let run_progress = self.runner.as_ref().and_then(|runner| {
                         (runner.active() == Some(&job.id)
-                            && matches!(job.status, JobStatus::Analyzing | JobStatus::Ripping))
+                            && matches!(
+                                job.status,
+                                JobStatus::Analyzing
+                                    | JobStatus::Ripping
+                                    | JobStatus::Pausing
+                                    | JobStatus::Paused
+                                    | JobStatus::Resuming
+                            ))
                         .then(|| (runner.position().unwrap_or(1), runner.total()))
                     });
                     column.push(job_row(
@@ -926,7 +1002,7 @@ fn job_row(
 ) -> Element<'_, Message> {
     let duration_known = !job.progress.duration.is_zero();
     let percent = job.progress.percent;
-    let analyzing = matches!(job.status, JobStatus::Analyzing);
+    let analyzing = job.is_analyzing();
     let job = JobPresentation::from(job);
     let id = job.id.clone();
     let status_label = run_progress.map_or_else(
@@ -1037,7 +1113,10 @@ async fn pick_video_folder() -> Option<PathBuf> {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use crate::ffmpeg::{ChannelMode, FfmpegProgress, Mp3Bitrate, RipOutcome, SampleRate};
+    use crate::ffmpeg::{
+        ChannelMode, FfmpegProgress, Mp3Bitrate, PauseControlEvent, RipOutcome, RipPhase,
+        SampleRate,
+    };
     use crate::model::media::AudioMetadata;
 
     use super::*;
@@ -1284,6 +1363,38 @@ mod tests {
         );
         assert!(matches!(queue.jobs[0].status, JobStatus::Cancelled));
         assert!(!queue.is_running());
+    }
+
+    #[test]
+    fn pause_state_follows_runner_acknowledgements_and_restores_phase() {
+        let mut queue = Queue::new();
+        let job_id = enqueue(&mut queue, "example");
+        let _ = queue.update(Message::ProbeCompleted {
+            job_id: job_id.clone(),
+            result: Ok(metadata()),
+        });
+        let _ = queue.start_queue();
+        let _ = queue.output_resolved(&job_id, Ok(PathBuf::from("/music/example.mp3")));
+
+        queue.mark_pausing(&job_id);
+        assert!(matches!(queue.selected_status(), Some(JobStatus::Pausing)));
+        let _ = queue.update(Message::ControlEvent {
+            job_id: job_id.clone(),
+            event: PauseControlEvent::Paused {
+                phase: RipPhase::Encoding,
+            },
+        });
+        assert!(matches!(queue.selected_status(), Some(JobStatus::Paused)));
+
+        queue.mark_resuming(&job_id);
+        assert!(matches!(queue.selected_status(), Some(JobStatus::Resuming)));
+        let _ = queue.update(Message::ControlEvent {
+            job_id: job_id.clone(),
+            event: PauseControlEvent::Resumed {
+                phase: RipPhase::Encoding,
+            },
+        });
+        assert!(matches!(queue.selected_status(), Some(JobStatus::Ripping)));
     }
 
     #[test]

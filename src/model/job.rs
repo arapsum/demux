@@ -51,6 +51,7 @@ pub struct RipJob {
     pub status: JobStatus,
     pub metadata: Option<MediaInfo>,
     pub progress: RipProgress,
+    pause_phase_analyzing: Option<bool>,
 }
 
 impl RipJob {
@@ -102,6 +103,7 @@ impl RipJob {
             status: JobStatus::Pending,
             metadata: None,
             progress: RipProgress::default(),
+            pause_phase_analyzing: None,
         }
     }
 
@@ -163,6 +165,49 @@ impl RipJob {
 
     pub(crate) fn start_cancelling(&mut self) {
         self.status = JobStatus::Cancelling;
+    }
+
+    pub(crate) fn start_pausing(&mut self, analyzing: bool) {
+        self.pause_phase_analyzing = Some(analyzing);
+        self.status = JobStatus::Pausing;
+    }
+
+    pub(crate) fn mark_paused(&mut self, analyzing: bool) {
+        self.pause_phase_analyzing = Some(analyzing);
+        self.status = JobStatus::Paused;
+    }
+
+    pub(crate) fn start_resuming(&mut self) {
+        self.status = JobStatus::Resuming;
+    }
+
+    pub(crate) fn mark_resumed(&mut self) {
+        self.status = if self.pause_phase_analyzing == Some(true) {
+            JobStatus::Analyzing
+        } else {
+            JobStatus::Ripping
+        };
+    }
+
+    pub(crate) fn is_analyzing(&self) -> bool {
+        matches!(self.status, JobStatus::Analyzing)
+            || (matches!(
+                self.status,
+                JobStatus::Pausing | JobStatus::Paused | JobStatus::Resuming
+            ) && self.pause_phase_analyzing == Some(true))
+    }
+
+    pub(crate) fn control_failed(&mut self, operation: crate::ffmpeg::PauseControlOperation) {
+        self.status = match operation {
+            crate::ffmpeg::PauseControlOperation::Pause => {
+                if self.pause_phase_analyzing == Some(true) {
+                    JobStatus::Analyzing
+                } else {
+                    JobStatus::Ripping
+                }
+            }
+            crate::ffmpeg::PauseControlOperation::Resume => JobStatus::Paused,
+        };
     }
 
     pub(crate) fn cancel(&mut self) {
@@ -273,6 +318,9 @@ pub enum JobStatus {
     Analyzing,
     Ripping,
     Cancelling,
+    Pausing,
+    Paused,
+    Resuming,
     Completed,
     Failed(String),
     Cancelled,

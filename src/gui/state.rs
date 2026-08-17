@@ -1,5 +1,5 @@
 use crate::{
-    ffmpeg::{CancellationHandle, DependencyState},
+    ffmpeg::{CancellationHandle, DependencyState, PauseControlHandle},
     model::job::JobId,
 };
 
@@ -19,6 +19,7 @@ pub struct Demux {
     pub(crate) error: Option<String>,
     pub(crate) notifications: Notifications,
     pub(crate) active_cancellation: Option<(JobId, CancellationHandle)>,
+    pub(crate) active_pause_control: Option<(JobId, PauseControlHandle)>,
     pub(crate) exit_after_queue: bool,
 }
 
@@ -33,6 +34,7 @@ impl Default for Demux {
             error: None,
             notifications: Notifications::new(),
             active_cancellation: None,
+            active_pause_control: None,
             exit_after_queue: false,
         }
     }

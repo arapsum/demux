@@ -69,6 +69,18 @@ impl From<&JobStatus> for StatusPresentation {
                 label: "Cancelling…",
                 color: WARNING,
             },
+            JobStatus::Pausing => Self {
+                label: "Pausing…",
+                color: WARNING,
+            },
+            JobStatus::Paused => Self {
+                label: "Paused",
+                color: WARNING,
+            },
+            JobStatus::Resuming => Self {
+                label: "Resuming…",
+                color: WARNING,
+            },
             JobStatus::Completed => Self {
                 label: "Completed",
                 color: SUCCESS,

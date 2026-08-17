@@ -5,7 +5,10 @@ use iced::widget::{button, column, container, progress_bar, row, space, text};
 use iced::{Element, Fill, Font, Padding};
 
 use crate::{
-    ffmpeg::{RipPhase, RipProgressEvent, RipRequest},
+    ffmpeg::{
+        PauseCapability, PauseControlEvent, PauseControlOperation, RipPhase, RipProgressEvent,
+        RipRequest,
+    },
     model::{
         encoding::RipOptions,
         job::{JobId, RipProgress},
@@ -15,8 +18,8 @@ use crate::{
 use super::{
     icon,
     style::{
-        DANGER, DANGER_TEXT, ICON_MUTED, SUCCESS, TEXT_MUTED, WARNING, destructive_action,
-        inset_panel, panel,
+        BUTTON_TEXT, DANGER, DANGER_TEXT, ICON_MUTED, SUCCESS, TEXT_MUTED, WARNING,
+        destructive_action, inset_panel, panel, secondary_action,
     },
 };
 
@@ -24,6 +27,8 @@ use super::{
 pub enum Action {
     None,
     CancelRequested(JobId),
+    PauseRequested(JobId),
+    ResumeRequested(JobId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +44,7 @@ pub enum Message {
         job_id: JobId,
         request: Box<RipRequest>,
         progress: RipProgress,
+        pause_capability: PauseCapability,
     },
     Advanced {
         job_id: JobId,
@@ -48,12 +54,25 @@ pub enum Message {
         job_id: JobId,
         status: TerminalStatus,
     },
+    ControlEvent {
+        job_id: JobId,
+        event: PauseControlEvent,
+    },
+    ControlRequestFailed {
+        job_id: JobId,
+        operation: PauseControlOperation,
+    },
+    Pause,
+    Resume,
     Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
     Running,
+    Pausing,
+    Paused,
+    Resuming,
     Cancelling,
     Completed,
     Cancelled,
@@ -67,6 +86,7 @@ struct ActiveProgress {
     options: RipOptions,
     phase: RipPhase,
     progress: RipProgress,
+    pause_capability: PauseCapability,
     status: Status,
 }
 
@@ -80,12 +100,14 @@ impl Progress {
         Self { active: None }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn update(&mut self, message: Message) -> Action {
         match message {
             Message::Started {
                 job_id,
                 request,
                 progress,
+                pause_capability,
             } => {
                 self.active = Some(ActiveProgress {
                     job_id,
@@ -97,6 +119,7 @@ impl Progress {
                         RipPhase::Encoding
                     },
                     progress,
+                    pause_capability,
                     status: Status::Running,
                 });
                 Action::None
@@ -139,12 +162,79 @@ impl Progress {
                 };
                 Action::None
             }
-            Message::Cancel => {
+            Message::ControlEvent { job_id, event } => {
                 let Some(active) = self
                     .active
                     .as_mut()
-                    .filter(|active| active.status == Status::Running)
+                    .filter(|active| active.job_id == job_id)
                 else {
+                    return Action::None;
+                };
+                match event {
+                    PauseControlEvent::Paused { phase } if active.status == Status::Pausing => {
+                        if active.phase != phase {
+                            active.phase = phase;
+                            active.progress.reset_for_phase();
+                        }
+                        active.status = Status::Paused;
+                    }
+                    PauseControlEvent::Resumed { phase } if active.status == Status::Resuming => {
+                        active.phase = phase;
+                        active.status = Status::Running;
+                    }
+                    PauseControlEvent::Failed { operation, .. } => {
+                        active.status = match operation {
+                            PauseControlOperation::Pause => Status::Running,
+                            PauseControlOperation::Resume => Status::Paused,
+                        };
+                    }
+                    _ => {}
+                }
+                Action::None
+            }
+            Message::ControlRequestFailed {
+                job_id, operation, ..
+            } => {
+                let Some(active) = self
+                    .active
+                    .as_mut()
+                    .filter(|active| active.job_id == job_id)
+                else {
+                    return Action::None;
+                };
+                active.status = match operation {
+                    PauseControlOperation::Pause => Status::Running,
+                    PauseControlOperation::Resume => Status::Paused,
+                };
+                Action::None
+            }
+            Message::Pause => {
+                let Some(active) = self.active.as_mut().filter(|active| {
+                    active.status == Status::Running && active.pause_capability.is_supported()
+                }) else {
+                    return Action::None;
+                };
+                active.status = Status::Pausing;
+                Action::PauseRequested(active.job_id.clone())
+            }
+            Message::Resume => {
+                let Some(active) = self
+                    .active
+                    .as_mut()
+                    .filter(|active| active.status == Status::Paused)
+                else {
+                    return Action::None;
+                };
+                active.status = Status::Resuming;
+                Action::ResumeRequested(active.job_id.clone())
+            }
+            Message::Cancel => {
+                let Some(active) = self.active.as_mut().filter(|active| {
+                    matches!(
+                        active.status,
+                        Status::Running | Status::Pausing | Status::Paused | Status::Resuming
+                    )
+                }) else {
                     return Action::None;
                 };
                 active.status = Status::Cancelling;
@@ -154,11 +244,13 @@ impl Progress {
     }
 
     pub(crate) fn mark_cancelling(&mut self, job_id: &JobId) {
-        if let Some(active) = self
-            .active
-            .as_mut()
-            .filter(|active| &active.job_id == job_id && active.status == Status::Running)
-        {
+        if let Some(active) = self.active.as_mut().filter(|active| {
+            &active.job_id == job_id
+                && matches!(
+                    active.status,
+                    Status::Running | Status::Pausing | Status::Paused | Status::Resuming
+                )
+        }) {
             active.status = Status::Cancelling;
         }
     }
@@ -198,19 +290,23 @@ impl Progress {
             .into();
         };
 
+        let phase_label = match active.phase {
+            RipPhase::Analyzing => "Analyzing loudness (1 of 2)",
+            RipPhase::Encoding => "Ripping audio (2 of 2)",
+        };
         let status_label = match active.status {
-            Status::Running => match active.phase {
-                RipPhase::Analyzing => "Analyzing loudness (1 of 2)",
-                RipPhase::Encoding => "Ripping audio (2 of 2)",
-            },
-            Status::Cancelling => "Cancelling",
-            Status::Completed => "Completed",
-            Status::Cancelled => "Cancelled",
-            Status::Failed => "Failed",
+            Status::Running => phase_label.to_owned(),
+            Status::Pausing => format!("Pausing — {phase_label}"),
+            Status::Paused => format!("Paused — {phase_label}"),
+            Status::Resuming => format!("Resuming — {phase_label}"),
+            Status::Cancelling => "Cancelling".to_owned(),
+            Status::Completed => "Completed".to_owned(),
+            Status::Cancelled => "Cancelled".to_owned(),
+            Status::Failed => "Failed".to_owned(),
         };
         let status_color = match active.status {
             Status::Running => super::style::ACCENT,
-            Status::Cancelling => WARNING,
+            Status::Pausing | Status::Paused | Status::Resuming | Status::Cancelling => WARNING,
             Status::Completed => SUCCESS,
             Status::Cancelled => TEXT_MUTED,
             Status::Failed => DANGER,
@@ -266,8 +362,12 @@ impl Progress {
         }
 
         let cancel: Element<'_, Message> = match active.status {
-            Status::Running | Status::Cancelling => {
-                let enabled = active.status == Status::Running;
+            Status::Running
+            | Status::Pausing
+            | Status::Paused
+            | Status::Resuming
+            | Status::Cancelling => {
+                let enabled = active.status != Status::Cancelling;
                 button(
                     row![
                         icon::stop(if enabled { DANGER_TEXT } else { ICON_MUTED }),
@@ -284,12 +384,45 @@ impl Progress {
             Status::Completed | Status::Cancelled | Status::Failed => space::horizontal().into(),
         };
 
+        let pause_control: Element<'_, Message> = if active.pause_capability.is_supported() {
+            match active.status {
+                Status::Running => button(
+                    row![icon::pause(BUTTON_TEXT), text("Pause").size(12),]
+                        .spacing(7)
+                        .align_y(iced::Alignment::Center),
+                )
+                .padding(Padding::from([7, 12]))
+                .style(secondary_action)
+                .on_press(Message::Pause)
+                .into(),
+                Status::Pausing => text("Pausing…").size(12).color(WARNING).into(),
+                Status::Paused => button(
+                    row![icon::play(BUTTON_TEXT), text("Resume").size(12),]
+                        .spacing(7)
+                        .align_y(iced::Alignment::Center),
+                )
+                .padding(Padding::from([7, 12]))
+                .style(secondary_action)
+                .on_press(Message::Resume)
+                .into(),
+                Status::Resuming => text("Resuming…").size(12).color(WARNING).into(),
+                Status::Cancelling | Status::Completed | Status::Cancelled | Status::Failed => {
+                    space::horizontal().into()
+                }
+            }
+        } else {
+            text(active.pause_capability.explanation().unwrap_or_default())
+                .size(11)
+                .color(TEXT_MUTED)
+                .into()
+        };
+
         container(
             column![
                 row![
                     heading,
                     space::horizontal(),
-                    text(status_label).size(12).color(status_color)
+                    text(status_label.clone()).size(12).color(status_color)
                 ]
                 .align_y(iced::Alignment::Center),
                 row![
@@ -330,6 +463,8 @@ impl Progress {
                     ))
                     .size(11)
                     .color(TEXT_MUTED),
+                    space::horizontal(),
+                    pause_control,
                     space::horizontal(),
                     cancel,
                 ]
@@ -403,6 +538,7 @@ mod tests {
                 duration: Duration::from_secs(120),
                 ..RipProgress::default()
             },
+            pause_capability: PauseCapability::Supported,
         }
     }
 
@@ -469,5 +605,55 @@ mod tests {
             status: TerminalStatus::Cancelled,
         });
         assert_eq!(state.active.as_ref().unwrap().status, Status::Cancelled);
+    }
+
+    #[test]
+    fn pause_and_resume_wait_for_runner_acknowledgements() {
+        let mut state = Progress::new();
+        let _ = state.update(started());
+
+        assert_eq!(
+            state.update(Message::Pause),
+            Action::PauseRequested(JobId::new(1))
+        );
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Pausing);
+
+        let _ = state.update(Message::ControlEvent {
+            job_id: JobId::new(1),
+            event: PauseControlEvent::Paused {
+                phase: RipPhase::Encoding,
+            },
+        });
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Paused);
+        assert_eq!(
+            state.update(Message::Resume),
+            Action::ResumeRequested(JobId::new(1))
+        );
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Resuming);
+
+        let _ = state.update(Message::ControlEvent {
+            job_id: JobId::new(1),
+            event: PauseControlEvent::Resumed {
+                phase: RipPhase::Encoding,
+            },
+        });
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Running);
+    }
+
+    #[test]
+    fn failed_pause_request_returns_to_running_state() {
+        let mut state = Progress::new();
+        let _ = state.update(started());
+        let _ = state.update(Message::Pause);
+
+        let _ = state.update(Message::ControlEvent {
+            job_id: JobId::new(1),
+            event: PauseControlEvent::Failed {
+                operation: PauseControlOperation::Pause,
+                phase: RipPhase::Encoding,
+                message: "permission denied".into(),
+            },
+        });
+        assert_eq!(state.active.as_ref().unwrap().status, Status::Running);
     }
 }
