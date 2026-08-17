@@ -1,67 +1,109 @@
+<p align="center">
+  <img src="assets/demux-logo.svg" width="280" alt="Demux logo">
+</p>
+
+<p align="center">
+  Extract clean audio from video files with FFmpeg.
+</p>
+
 # Demux
 
-Demux is a native Rust desktop utility for extracting audio from video files with [FFmpeg](https://ffmpeg.org/). Its goal is to make a common command-line workflow feel clear and approachable: choose your videos, configure the output, start the queue, and watch the work happen.
+Demux is a native Rust desktop application for extracting audio from local
+video files. It makes the FFmpeg workflow visible and approachable: add media,
+inspect what was found, choose how and where to save the audio, then follow the
+queue through completion, failure, cancellation, or pause.
 
-> **Status:** early development. Demux now has a functional Iced shell for
-> selecting and probing multiple videos, then extracting every eligible job
-> sequentially with configurable MP3 settings, two-pass EBU R128 normalization,
-> folder-preserving destinations, live progress, estimates, and a bounded
-> exportable FFmpeg log. Safe queue cancellation and Unix process-group
-> pause/resume are implemented; unsupported platforms keep Cancel available and
-> the complete reference interface remains planned.
+> **Status:** active development. The core multi-file extraction workflow is
+> functional; final shell polish, packaging, and platform-specific distribution
+> guidance remain.
 
-## Product direction
+## Current capabilities
 
-Demux is designed as a focused, cross-platform audio-ripping application built with [Iced](https://github.com/iced-rs/iced). The name comes from *demuxing*: separating an audio stream from the other streams inside a multimedia container.
+- Add individual files or folders, or drop them into the application. Folder
+  imports discover supported media recursively and preserve a stable queue
+  order.
+- Probe each item asynchronously with FFprobe, show the discovered media
+  details, and keep invalid, duplicate, or unreadable inputs from blocking
+  valid work.
+- Extract eligible jobs sequentially as MP3 with validated 128–320 kbps
+  bitrate, 44.1/48 kHz sample-rate, and mono or stereo output.
+- Choose an output folder, preserve safe paths from folder imports, and avoid
+  overwriting existing files by selecting a numbered filename.
+- Copy allowlisted metadata and compatible embedded artwork when enabled.
+- Optionally apply two-pass EBU R128 loudness normalization targeting −23 LUFS
+  with a decoded −1 dBTP ceiling.
+- Follow active work through percentage, elapsed time, speed, bitrate, output
+  size, and remaining-time estimates when FFmpeg provides those values.
+- View bounded, timestamped FFmpeg output in the app, then clear or export the
+  retained log without affecting structured tracing.
+- Cancel the entire queue safely, including partial-output cleanup. Unix builds
+  also support pause and resume through a dedicated FFmpeg process group;
+  unsupported platforms report that limitation explicitly.
 
-The intended workflow is:
+Supported intake extensions are MP4, MKV, MOV, AVI, WMV, FLV, MPEG, and MPG.
+Whether a file can be extracted still depends on the codecs available to the
+locally installed FFmpeg build.
 
-1. Add video files or folders by dropping them into the application or selecting them from a file dialog.
-2. Review the queue, including file names, durations, status, output format, and estimated size.
-3. Choose an output folder and audio settings.
-4. Start the queue and monitor progress, speed, remaining time, and FFmpeg output.
-5. Cancel or inspect jobs when something goes wrong.
+## Requirements
 
-## Planned features
+- [Rust](https://www.rust-lang.org/tools/install) and Cargo
+- [FFmpeg](https://ffmpeg.org/) available as `ffmpeg` on `PATH`
+- FFprobe available as `ffprobe` on `PATH`
+- A desktop environment supported by [Iced](https://github.com/iced-rs/iced)
 
-- Drag-and-drop support for common video formats such as MP4, MKV, MOV, AVI, WMV, FLV, and MPEG.
-- A multi-file queue with queued, active, completed, and failed states.
-- MP3 output with persisted bitrate, sample-rate, and channel defaults plus
-  output-location controls; additional formats can follow the validated model.
-- Per-job progress with percentage, elapsed time, remaining time, speed, and audio properties.
-- Optional two-pass loudness normalization targeting −23 LUFS with a decoded
-  −1 dBTP ceiling.
-- Optional preservation of paths relative to a selected folder import.
-- Start, pause where supported, and cancel controls.
-- A readable FFmpeg log with options to clear or save it.
-- Startup checks for both `ffmpeg` and `ffprobe`, with actionable error messages when either dependency is missing.
+FFmpeg and FFprobe are runtime requirements. They are not needed merely to
+compile or run the unit tests, but Demux checks for both before it accepts work.
 
-## MVP scope
+### Linux note
 
-The first usable release should keep the core pipeline small and reliable:
+Demux currently uses X11 or XWayland on Linux. Iced 0.14 does not emit desktop
+file-drop events through its Wayland backend, so native Wayland support remains
+disabled until that upstream capability is available.
 
-```text
-video file → FFmpeg → audio file
+## Getting started
+
+From the repository root:
+
+```bash
+cargo run
 ```
 
-The current GUI slice supports multi-file and folder intake, asynchronous media
-probing, a shared output folder, and sequential MP3 extraction with per-row
-terminal states, live process measurements, and a queue summary. Cancellation
-stops the active FFmpeg process and remaining queue, removes partial output, and
-also protects application shutdown. MP3 jobs snapshot validated bitrate, sample
-rate, channel mode, metadata, artwork, normalization, and destination policies
-before execution, while user defaults persist between launches. Allowlisted
-source tags and compatible embedded cover art are preserved when their controls
-are enabled; absent or unsupported artwork remains non-fatal. Preserved folder
-imports retain safe paths relative to their selected root. Presets, parallel
-ripping, and advanced stream selection can follow once that pipeline is solid.
-On Unix, pause and resume suspend a dedicated FFmpeg process group and report
-explicit acknowledgements; other platforms explain that only cancellation is
-available.
+Then add one or more videos, confirm the output folder and MP3 settings, and
+select **Start Ripping**. Existing output files are never overwritten: Demux
+chooses the next available numbered name instead.
+
+For additional runtime diagnostics, enable tracing before launching:
+
+```bash
+RUST_LOG=demux=debug cargo run
+```
+
+## Development
+
+The same checks used by continuous integration are useful before submitting a
+change:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features
+```
+
+The FFmpeg normalization and pause/resume integration tests require local
+FFmpeg and FFprobe, and are therefore ignored by default. Run them explicitly
+when those tools are available:
+
+```bash
+cargo test --test ffmpeg_normalization -- --ignored
+cargo test --test ffmpeg_pause -- --ignored
+```
 
 ## Architecture
 
-The FFmpeg engine is intended to remain independent of the UI. Iced should drive the application state and render events from the extraction layer, while the extraction layer handles media probing, command construction, process management, progress parsing, logging, and cancellation.
+The FFmpeg engine remains independent of the Iced view layer. The GUI renders
+state and forwards explicit actions; application and adapter layers own probing,
+command construction, process management, progress parsing, logging, and
+recovery.
 
 ```text
 Iced UI
@@ -71,90 +113,36 @@ Application model
 FFmpeg service
   ├── ffprobe: inspect media
   ├── ffmpeg: extract audio
-  └── bounded progress/log events: update the UI
+  └── bounded progress and log events: update the UI
 ```
 
-This separation keeps process management out of the view layer and makes the FFmpeg integration testable without launching the desktop application.
-
-Subsystem adapters retain their specific error types, while application runtime
-operations promote failures into the unified `demux::Error`. Iced task messages
-share those typed errors through `Arc` so messages remain cloneable; conversion
-to human-readable text happens only when persistent job or interface state is
-updated.
-
-The GUI follows a composed-state architecture. `Demux` is the composition root,
-while each independent surface owns its state, local messages, initialization,
-update logic, and view. The root maps child tasks and translates explicit child
-actions when a workflow crosses surface boundaries. Queue, progress, output
-settings, and notifications use this structure today.
+`Demux` is the GUI composition root. Each substantial surface owns its local
+state, messages, initialization, update logic, and view; the root maps child
+tasks when a workflow crosses a boundary.
 
 ```text
 Demux
-  ├── Queue            → file intake, probing, selection, and job presentation
-  ├── Progress         → active extraction measurements and estimates
+  ├── Queue            → intake, probing, selection, and job presentation
+  ├── Progress         → active extraction measurements and controls
   ├── Logs             → bounded FFmpeg output, retention, and export
-  ├── OutputSettings  → folder selection and Start action
-  └── Notifications   → toast lifecycle and overlay
+  ├── OutputSettings   → encoding and destination choices
+  └── Notifications    → transient completion and failure feedback
 ```
 
-## Requirements
-
-For the planned application:
-
-- Rust and Cargo
-- FFmpeg available as `ffmpeg` on `PATH`
-- FFprobe available as `ffprobe` on `PATH`
-- A desktop environment supported by Iced
-
-On Linux, Demux currently uses X11 or XWayland because Iced 0.14 does not emit
-desktop file-drop events on its Wayland backend. Native Wayland support can be
-enabled once those events are implemented upstream.
-
-Iced is a build dependency. FFmpeg and FFprobe are runtime requirements and do
-not need to be installed to compile or test Demux.
-
-## Getting started
-
-From the repository root, launch the Demux desktop interface:
-
-```bash
-cargo run
-```
-
-The current GUI supports building and probing a queue, choosing an output
-folder, and extracting eligible jobs sequentially without blocking the
-interface. The active extraction reports elapsed time, percentage, speed,
-bitrate, output size, and remaining-time estimates when those values are known.
-Existing output files receive numbered names instead of being overwritten. Run
-the test suite with:
-
-```bash
-cargo test
-```
-
-Useful checks while developing:
-
-```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features
-```
+Subsystem adapters retain their specific error types. Application runtime
+operations promote failures into the unified `demux::Error`, and the GUI turns
+them into persistent job state or user-facing messages only at its boundary.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the engine-first vertical-slice plan that
-connects each reference-interface feature to its required backend behavior.
+Milestones 0–9 are complete: GUI composition, intake, sequential execution,
+live progress, cancellation, configurable MP3 output, metadata/artwork,
+normalization and folder structure, FFmpeg logs, and Unix pause/resume.
+Milestone 10 focuses on the complete shell, accessibility, settings and about
+surfaces, and visual parity with the supplied reference.
 
-- [x] Create the initial Rust package and named binary.
-- [x] Add the first Iced application shell and desktop layout.
-- [x] Define queue, settings, and job models.
-- [x] Add FFmpeg/FFprobe detection and a safe argument-based command builder.
-- [x] Implement cancellation and bounded log streaming/export.
-- [x] Connect multi-file and folder intake, desktop drops, queue selection, and removal.
-- [x] Connect sequential queue execution and queue-aware completion summaries.
-- [x] Connect the progress panel.
-- [x] Add validated MP3 settings, metadata policies, and compatible artwork.
-- [x] Add two-pass EBU R128 normalization and folder-preserving destinations.
-- [ ] Add packaging and platform-specific distribution guidance.
+See [ROADMAP.md](ROADMAP.md) for the engine-first milestone plan and its exit
+criteria.
 
 ## License
 
