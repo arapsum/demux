@@ -102,6 +102,19 @@ For additional runtime diagnostics, enable tracing before launching:
 RUST_LOG=demux=debug cargo run
 ```
 
+Release builds write structured tracing to human-readable daily log files.
+Files are named `demux.YYYY-MM-DD.log`; the seven most recent files are
+retained in the following locations:
+
+- Linux: `$XDG_STATE_HOME/demux/logs`, or `~/.local/state/demux/logs`.
+- macOS: `~/Library/Logs/Demux`.
+- Windows: `%LOCALAPPDATA%/Demux/logs`.
+
+Set `DEMUX_LOG_DIR` to choose an alternate directory. `RUST_LOG` also applies
+to release log files; it defaults to `demux=info`. The production tracing files
+are separate from the bounded FFmpeg log shown in the application and exported
+with **Save Log**.
+
 ## Development
 
 The same checks used by continuous integration are useful before submitting a

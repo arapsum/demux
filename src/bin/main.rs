@@ -1,7 +1,7 @@
 use demux::{gui, telemetry};
 
 fn main() -> iced::Result {
-    telemetry::init();
+    let _telemetry = telemetry::init();
 
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "Starting Demux");
 
