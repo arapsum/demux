@@ -13,9 +13,9 @@ video files. It makes the FFmpeg workflow visible and approachable: add media,
 inspect what was found, choose how and where to save the audio, then follow the
 queue through completion, failure, cancellation, or pause.
 
-> **Status:** active development. The complete extraction shell and multi-file
-> workflow are functional; packaging and platform-specific distribution
-> guidance remain.
+> **Status:** active development. The extraction workflow is functional, and
+> tagged releases publish portable Linux archives. Native installers and
+> packages for additional platforms are not yet available.
 
 ## Current capabilities
 
@@ -51,13 +51,14 @@ locally installed FFmpeg build.
 
 ## Requirements
 
-- [Rust](https://www.rust-lang.org/tools/install) and Cargo
 - [FFmpeg](https://ffmpeg.org/) available as `ffmpeg` on `PATH`
 - FFprobe available as `ffprobe` on `PATH`
 - A desktop environment supported by [Iced](https://github.com/iced-rs/iced)
 
-FFmpeg and FFprobe are runtime requirements. They are not needed merely to
-compile or run the unit tests, but Demux checks for both before it accepts work.
+Building from source additionally requires
+[Rust](https://www.rust-lang.org/tools/install) and Cargo. FFmpeg and FFprobe
+are not needed merely to compile or run the unit tests, but Demux checks for
+both before it accepts work.
 
 ### Linux note
 
@@ -65,7 +66,25 @@ Demux currently uses X11 or XWayland on Linux. Iced 0.14 does not emit desktop
 file-drop events through its Wayland backend, so native Wayland support remains
 disabled until that upstream capability is available.
 
-## Getting started
+## Install a release
+
+Linux release archives and SHA-256 checksums are published on the
+[GitHub Releases page](https://github.com/arapsum/demux/releases). After
+installing FFmpeg with your distribution's package manager, verify the
+download, extract it, and launch `demux`:
+
+```bash
+sha256sum --check demux-0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf demux-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+cd demux-0.1.0-x86_64-unknown-linux-gnu
+./demux
+```
+
+Replace `0.1.0` with the version you downloaded. See
+[INSTALL.md](INSTALL.md) for distribution-specific FFmpeg commands,
+troubleshooting, and optional desktop integration.
+
+## Build from source
 
 From the repository root:
 
