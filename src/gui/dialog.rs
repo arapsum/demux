@@ -16,11 +16,14 @@ pub fn modal<'a, Message: Clone + 'a>(
         Some(message) => mouse_area(backdrop).on_press(message).into(),
         None => backdrop.into(),
     };
-    let dialog = container(dialog)
+    // Keep the centering container transparent to mouse events outside the
+    // dialog card. Only the card itself should stop events reaching the
+    // dismissible backdrop beneath it.
+    let dialog = container(opaque(dialog))
         .width(Fill)
         .height(Fill)
         .center_x(Fill)
         .center_y(Fill);
 
-    stack![content, opaque(backdrop), opaque(dialog)].into()
+    stack![content, opaque(backdrop), dialog].into()
 }
