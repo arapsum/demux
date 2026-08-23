@@ -35,8 +35,8 @@ sudo pacman -S ffmpeg
 Extract the release archive, then run the executable:
 
 ```bash
-tar -xzf demux-0.1.1-x86_64-unknown-linux-gnu.tar.gz
-cd demux-0.1.1-x86_64-unknown-linux-gnu
+tar -xzf demux-0.1.2-x86_64-unknown-linux-gnu.tar.gz
+cd demux-0.1.2-x86_64-unknown-linux-gnu
 ./demux
 ```
 
