@@ -74,13 +74,13 @@ installing FFmpeg with your distribution's package manager, verify the
 download, extract it, and launch `demux`:
 
 ```bash
-sha256sum --check demux-0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf demux-0.1.0-x86_64-unknown-linux-gnu.tar.gz
-cd demux-0.1.0-x86_64-unknown-linux-gnu
+sha256sum --check demux-0.1.1-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf demux-0.1.1-x86_64-unknown-linux-gnu.tar.gz
+cd demux-0.1.1-x86_64-unknown-linux-gnu
 ./demux
 ```
 
-Replace `0.1.0` with the version you downloaded. See
+Replace `0.1.1` with the version you downloaded. See
 [INSTALL.md](INSTALL.md) for distribution-specific FFmpeg commands,
 troubleshooting, and optional desktop integration.
 
