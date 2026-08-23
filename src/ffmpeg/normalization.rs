@@ -7,8 +7,9 @@ pub const TARGET_INTEGRATED_LUFS: f64 = -23.0;
 /// remain below the public -1 dBTP ceiling.
 pub const FILTER_TRUE_PEAK: f64 = -2.0;
 pub const OUTPUT_TRUE_PEAK_LIMIT: f64 = -1.0;
-/// A ceiling rather than a compression target: preserve the source dynamics.
-pub const LRA_CEILING: f64 = 50.0;
+/// A cross-version ceiling rather than a compression target: preserve source
+/// dynamics while remaining within the 1–20 LU range accepted by `FFmpeg` 4.4.
+pub const LRA_CEILING: f64 = 20.0;
 
 /// First-pass loudness values required to build a normalized encoding command.
 #[derive(Debug, Clone, Copy, PartialEq)]

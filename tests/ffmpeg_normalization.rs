@@ -91,7 +91,7 @@ fn measure(path: &Path) -> LoudnessMeasurement {
         .arg(path)
         .args([
             "-af",
-            "loudnorm=I=-23:LRA=50:TP=-1:print_format=json",
+            "loudnorm=I=-23:LRA=20:TP=-1:print_format=json",
             "-f",
             "null",
             "-",

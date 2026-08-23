@@ -1511,7 +1511,7 @@ mod tests {
         assert!(
             arguments
                 .windows(2)
-                .any(|pair| pair[0] == "-af" && pair[1].contains("I=-23:LRA=50:TP=-2"))
+                .any(|pair| pair[0] == "-af" && pair[1].contains("I=-23:LRA=20:TP=-2"))
         );
     }
 
