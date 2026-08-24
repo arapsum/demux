@@ -30,6 +30,21 @@ On Arch Linux:
 sudo pacman -S ffmpeg
 ```
 
+## Debian package
+
+On Debian or Ubuntu x86_64, install the release package with:
+
+```bash
+sudo apt install ./demux_0.1.2_amd64.deb
+```
+
+The package installs Demux at `/usr/bin/demux`, registers its desktop
+launcher and icon, and pulls in the `ffmpeg` runtime dependency. Replace
+`0.1.2` with the version you downloaded.
+
+Remove the package with `sudo apt remove demux`. Demux preferences and logs in
+your home directory are not removed.
+
 ## Run Demux
 
 Extract the release archive, then run the executable:

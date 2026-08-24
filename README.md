@@ -14,8 +14,9 @@ inspect what was found, choose how and where to save the audio, then follow the
 queue through completion, failure, cancellation, or pause.
 
 > **Status:** active development. The extraction workflow is functional, and
-> tagged releases publish portable Linux archives. Native installers and
-> packages for additional platforms are not yet available.
+> tagged releases publish portable Linux archives and Debian packages for
+> Linux x86_64. Native installers for additional platforms are not yet
+> available.
 
 ## Current capabilities
 
@@ -68,9 +69,18 @@ disabled until that upstream capability is available.
 
 ## Install a release
 
-Linux release archives and SHA-256 checksums are published on the
-[GitHub Releases page](https://github.com/arapsum/demux/releases). After
-installing FFmpeg with your distribution's package manager, verify the
+Linux release archives, Debian packages, and SHA-256 checksums are published on
+the [GitHub Releases page](https://github.com/arapsum/demux/releases).
+
+On Debian or Ubuntu x86_64, install the `.deb` package with:
+
+```bash
+sudo apt install ./demux_0.1.2_amd64.deb
+```
+
+The package installs FFmpeg and the desktop launcher as Debian dependencies.
+Replace `0.1.2` with the version you downloaded. To use the portable archive
+instead, install FFmpeg with your distribution's package manager, verify the
 download, extract it, and launch `demux`:
 
 ```bash
@@ -80,9 +90,10 @@ cd demux-0.1.2-x86_64-unknown-linux-gnu
 ./demux
 ```
 
-Replace `0.1.2` with the version you downloaded. See
-[INSTALL.md](INSTALL.md) for distribution-specific FFmpeg commands,
-troubleshooting, and optional desktop integration.
+See [INSTALL.md](INSTALL.md) for distribution-specific FFmpeg commands,
+troubleshooting, and optional desktop integration. See
+[docs/RELEASING.md](docs/RELEASING.md) for the package build and release
+procedure.
 
 ## Build from source
 

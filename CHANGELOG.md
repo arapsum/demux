@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added reproducible Debian packaging for Linux x86_64 with desktop metadata,
+  runtime dependency declarations, checksums, and package validation.
+
 ## [0.1.2] - 2026-08-23
 
 ### Changed
