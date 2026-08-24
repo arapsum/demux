@@ -75,18 +75,18 @@ the [GitHub Releases page](https://github.com/arapsum/demux/releases).
 On Debian or Ubuntu x86_64, install the `.deb` package with:
 
 ```bash
-sudo apt install ./demux_0.1.2_amd64.deb
+sudo apt install ./demux_0.1.3_amd64.deb
 ```
 
 The package installs FFmpeg and the desktop launcher as Debian dependencies.
-Replace `0.1.2` with the version you downloaded. To use the portable archive
+Replace `0.1.3` with the version you downloaded. To use the portable archive
 instead, install FFmpeg with your distribution's package manager, verify the
 download, extract it, and launch `demux`:
 
 ```bash
-sha256sum --check demux-0.1.2-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf demux-0.1.2-x86_64-unknown-linux-gnu.tar.gz
-cd demux-0.1.2-x86_64-unknown-linux-gnu
+sha256sum --check demux-0.1.3-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf demux-0.1.3-x86_64-unknown-linux-gnu.tar.gz
+cd demux-0.1.3-x86_64-unknown-linux-gnu
 ./demux
 ```
 

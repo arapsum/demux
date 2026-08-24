@@ -27,6 +27,11 @@
     <keyword>video</keyword>
   </keywords>
   <releases>
+    <release version="0.1.3" date="2026-08-24">
+      <description>
+        <p>Adds Debian packaging, package validation, and release checks for Linux x86_64.</p>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-08-23">
       <description>
         <p>Improves the application icon's intrinsic dimensions while preserving its artwork.</p>

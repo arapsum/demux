@@ -35,12 +35,12 @@ sudo pacman -S ffmpeg
 On Debian or Ubuntu x86_64, install the release package with:
 
 ```bash
-sudo apt install ./demux_0.1.2_amd64.deb
+sudo apt install ./demux_0.1.3_amd64.deb
 ```
 
 The package installs Demux at `/usr/bin/demux`, registers its desktop
 launcher and icon, and pulls in the `ffmpeg` runtime dependency. Replace
-`0.1.2` with the version you downloaded.
+`0.1.3` with the version you downloaded.
 
 Remove the package with `sudo apt remove demux`. Demux preferences and logs in
 your home directory are not removed.
@@ -50,8 +50,8 @@ your home directory are not removed.
 Extract the release archive, then run the executable:
 
 ```bash
-tar -xzf demux-0.1.2-x86_64-unknown-linux-gnu.tar.gz
-cd demux-0.1.2-x86_64-unknown-linux-gnu
+tar -xzf demux-0.1.3-x86_64-unknown-linux-gnu.tar.gz
+cd demux-0.1.3-x86_64-unknown-linux-gnu
 ./demux
 ```
 
