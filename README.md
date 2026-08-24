@@ -18,6 +18,10 @@ queue through completion, failure, cancellation, or pause.
 > Linux x86_64. Native installers for additional platforms are not yet
 > available.
 
+<p align="center">
+  <img src="assets/demux-screenshot.png" width="1200" alt="Demux running an audio extraction queue with progress, output settings, and FFmpeg logs">
+</p>
+
 ## Current capabilities
 
 - Add individual files or folders, or drop them into the application. Folder
