@@ -15,6 +15,24 @@ readonly checksum_path="${archive_path}.sha256"
 readonly binary_path="${project_root}/target/release/demux"
 readonly desktop_file="${project_root}/packaging/linux/demux.desktop"
 readonly icon_file="${project_root}/packaging/linux/demux.svg"
+skip_build=false
+
+while (($# > 0)); do
+    case "$1" in
+        --skip-build)
+            skip_build=true
+            ;;
+        -h|--help)
+            printf 'Usage: scripts/package-tarball.sh [--skip-build]\n'
+            exit 0
+            ;;
+        *)
+            printf 'error: unknown option: %s\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
 
 if [[ -z "${package_version}" || -z "${target_triple}" ]]; then
     echo "Could not determine Demux's version or Rust target triple." >&2
@@ -35,7 +53,9 @@ if [[ -e "${bundle_directory}" || -e "${archive_path}" || -e "${checksum_path}" 
 fi
 
 cd "${project_root}"
-cargo build --release --locked
+if [[ "${skip_build}" != true ]]; then
+    cargo build --release --locked
+fi
 
 if [[ ! -x "${binary_path}" ]]; then
     echo "Release binary was not created at ${binary_path}." >&2

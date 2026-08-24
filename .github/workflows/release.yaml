@@ -17,7 +17,7 @@ env:
 
 jobs:
   publish:
-    name: Publish Linux archive
+    name: Publish Linux artifacts
     runs-on: ubuntu-22.04
 
     steps:
@@ -58,10 +58,10 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets --all-features
 
-      - name: Install FFmpeg
+      - name: Install FFmpeg and Linux packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y appstream desktop-file-utils dpkg-dev ffmpeg
 
       - name: Test FFmpeg normalization
         run: cargo test --test ffmpeg_normalization -- --ignored
@@ -69,8 +69,20 @@ jobs:
       - name: Test FFmpeg pause and resume
         run: cargo test --test ffmpeg_pause -- --ignored
 
+      - name: Build release binary
+        run: cargo build --release --locked
+
       - name: Build release archive
-        run: ./scripts/package-tarball.sh
+        run: ./scripts/package-tarball.sh --skip-build
+
+      - name: Build Debian package
+        run: ./scripts/package-linux.sh --skip-build "${GITHUB_REF_NAME#v}"
+
+      - name: Validate Debian package
+        run: ./scripts/validate-linux-package.sh "dist/demux_${GITHUB_REF_NAME#v}_amd64.deb"
+
+      - name: Verify clean Debian installation and upgrade
+        run: ./scripts/verify-linux-install.sh "dist/demux_${GITHUB_REF_NAME#v}_amd64.deb"
 
       - name: Verify release checksum
         shell: bash
@@ -78,6 +90,7 @@ jobs:
           set -euo pipefail
           cd dist
           sha256sum --check ./*.tar.gz.sha256
+          sha256sum --check ./*.deb.sha256
 
       - name: Publish GitHub Release
         env:
@@ -86,6 +99,8 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             ./dist/*.tar.gz \
             ./dist/*.tar.gz.sha256 \
+            ./dist/*.deb \
+            ./dist/*.deb.sha256 \
             --verify-tag \
             --generate-notes \
             --title "Demux ${GITHUB_REF_NAME#v}"
