@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.arapsum.Demux</id>
+  <name>Demux</name>
+  <summary>Extract clean audio from video files</summary>
+  <developer id="io.github.arapsum">
+    <name>Kibet Bittok</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <content_rating type="oars-1.1" />
+  <description>
+    <p>Demux is a native desktop application for extracting audio from local video files.</p>
+    <p>Choose media, inspect its metadata, configure MP3 output, and watch the FFmpeg extraction workflow with clear progress and diagnostics.</p>
+  </description>
+  <launchable type="desktop-id">demux.desktop</launchable>
+  <url type="homepage">https://github.com/arapsum/demux</url>
+  <url type="bugtracker">https://github.com/arapsum/demux/issues</url>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+  </categories>
+  <keywords>
+    <keyword>audio</keyword>
+    <keyword>extract</keyword>
+    <keyword>ffmpeg</keyword>
+    <keyword>video</keyword>
+  </keywords>
+  <releases>
+    <release version="0.1.2" date="2026-08-23">
+      <description>
+        <p>Improves the application icon's intrinsic dimensions while preserving its artwork.</p>
+      </description>
+    </release>
+    <release version="0.1.1" date="2026-08-23">
+      <description>
+        <p>Restores compatible loudness normalization across supported FFmpeg releases.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-08-18">
+      <description>
+        <p>Initial public release of Demux.</p>
+      </description>
+    </release>
+  </releases>
+</component>

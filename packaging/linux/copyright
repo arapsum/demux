@@ -1,0 +1,11 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Demux
+Source: https://github.com/arapsum/demux
+
+Files: *
+Copyright: 2026 Kibet Bittok
+License: GPL-3.0-only
+ Demux is distributed under the GNU General Public License, version 3 only.
+ .
+ On Debian systems, the complete text of the GNU General Public License version
+ 3 can be found in /usr/share/common-licenses/GPL-3.
